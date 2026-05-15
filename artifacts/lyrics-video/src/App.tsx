@@ -269,6 +269,8 @@ export default function App() {
   const [editingText, setEditingText] = useState("");
   const [editingTimeIdx, setEditingTimeIdx] = useState<number | null>(null);
   const [editingTimeVal, setEditingTimeVal] = useState("");
+  const [editingTimeSide, setEditingTimeSide] = useState<"start" | "end">("start");
+  const [isSyncing, setIsSyncing] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
   const [lyricStyleId, setLyricStyleId] = useState<LyricStyleId>("purple");
@@ -404,15 +406,39 @@ export default function App() {
   const getAudioCacheKey = (file: File) =>
     `lvg_transcribe_${file.name}_${file.size}_${file.lastModified}`;
 
-  const applyTranscribeResult = (lines: { text: string; start: number; end: number }[]) => {
-    setLyricsText(lines.map((l) => l.text).join("\n"));
-    setLyricsLines(lines);
+  const applyTranscribeResult = (
+    geminiLines: { text: string; start: number; end: number }[],
+    keepManual = false,
+  ) => {
+    const manualLines = lyricsText.split("\n").map((l) => l.trim()).filter(Boolean);
+
+    if (keepManual && manualLines.length > 0 && geminiLines.length > 0) {
+      // Keep user's typed text; assign Gemini timestamps line-by-line
+      const avgDur =
+        geminiLines.length > 1
+          ? (geminiLines[geminiLines.length - 1].end - geminiLines[0].start) / geminiLines.length
+          : Math.max(1, geminiLines[0].end - geminiLines[0].start);
+      const lastEnd = geminiLines[geminiLines.length - 1].end;
+
+      const synced = manualLines.map((text, i) => {
+        if (i < geminiLines.length) {
+          return { text, start: geminiLines[i].start, end: geminiLines[i].end };
+        }
+        // Extra manual lines beyond Gemini count → extend proportionally
+        const extra = i - geminiLines.length;
+        return { text, start: lastEnd + extra * avgDur, end: lastEnd + (extra + 1) * avgDur };
+      });
+      setLyricsLines(synced);
+    } else {
+      setLyricsText(geminiLines.map((l) => l.text).join("\n"));
+      setLyricsLines(geminiLines);
+    }
     setCurrentLineIndex(-1);
   };
 
-  const handleAiTranscribe = async (forceRefresh = false) => {
+  const handleAiTranscribe = async (forceRefresh = false, keepManual = false) => {
     if (!audioFile) return;
-    setIsTranscribing(true);
+    keepManual ? setIsSyncing(true) : setIsTranscribing(true);
     setTranscribeError(null);
     setTranscribeFromCache(false);
 
@@ -424,7 +450,7 @@ export default function App() {
         const cached = localStorage.getItem(cacheKey);
         if (cached) {
           const lines = JSON.parse(cached) as { text: string; start: number; end: number }[];
-          applyTranscribeResult(lines);
+          applyTranscribeResult(lines, keepManual);
           setTranscribeFromCache(true);
           return;
         }
@@ -459,11 +485,12 @@ export default function App() {
 
       // Save to cache then apply
       try { localStorage.setItem(cacheKey, JSON.stringify(lines)); } catch { /* quota exceeded — ignore */ }
-      applyTranscribeResult(lines);
+      applyTranscribeResult(lines, keepManual);
     } catch (err) {
       setTranscribeError(err instanceof Error ? err.message : "Lỗi không xác định");
     } finally {
       setIsTranscribing(false);
+      setIsSyncing(false);
     }
   };
 
@@ -484,20 +511,28 @@ export default function App() {
 
   const cancelEditLine = () => setEditingLineIndex(null);
 
-  // ── Time editing: clicking a start-time badge makes it editable ──────────
-  const startEditTime = (i: number) => {
+  // ── Time editing: clicking start or end badge makes it an inline input ──────
+  const startEditTime = (i: number, side: "start" | "end" = "start") => {
+    setEditingTimeSide(side);
     setEditingTimeIdx(i);
-    setEditingTimeVal(lyricsLines[i].start.toFixed(1));
+    setEditingTimeVal(
+      side === "start" ? lyricsLines[i].start.toFixed(2) : lyricsLines[i].end.toFixed(2)
+    );
   };
 
   const saveEditTime = () => {
     if (editingTimeIdx === null) return;
-    const newStart = parseFloat(editingTimeVal);
-    if (!isNaN(newStart) && newStart >= 0) {
+    const newVal = parseFloat(editingTimeVal);
+    if (!isNaN(newVal) && newVal >= 0) {
       setLyricsLines((prev) =>
         prev.map((l, i) => {
-          if (i === editingTimeIdx) return { ...l, start: newStart };
-          if (i === editingTimeIdx - 1) return { ...l, end: newStart }; // prev line shrinks/grows
+          if (editingTimeSide === "start") {
+            if (i === editingTimeIdx) return { ...l, start: newVal };
+            if (i === editingTimeIdx - 1) return { ...l, end: newVal }; // prev line's end adjusts
+          } else {
+            if (i === editingTimeIdx) return { ...l, end: newVal };
+            if (i === editingTimeIdx + 1) return { ...l, start: newVal }; // next line's start adjusts
+          }
           return l;
         })
       );
@@ -854,9 +889,11 @@ export default function App() {
               <p className="text-[10px] font-semibold tracking-[0.12em] uppercase text-white/40 mb-2">
                 Nhận diện lời bài hát (AI)
               </p>
+
+              {/* Primary: full AI transcription (replaces text + timestamps) */}
               <button
                 onClick={() => handleAiTranscribe(false)}
-                disabled={!audioFile || isTranscribing || isAnalyzing}
+                disabled={!audioFile || isTranscribing || isSyncing || isAnalyzing}
                 className="w-full h-11 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-all
                   bg-gradient-to-r from-emerald-600 to-teal-600
                   hover:from-emerald-500 hover:to-teal-500
@@ -876,6 +913,29 @@ export default function App() {
                 )}
               </button>
 
+              {/* Secondary: sync timing to manually-typed lyrics */}
+              <button
+                onClick={() => handleAiTranscribe(false, true)}
+                disabled={!audioFile || isTranscribing || isSyncing || isAnalyzing}
+                className="mt-2 w-full h-9 rounded-xl font-semibold text-xs flex items-center justify-center gap-2 transition-all
+                  border border-violet-500/30 text-violet-300/80
+                  hover:bg-violet-500/10 hover:border-violet-500/60 hover:text-violet-200
+                  disabled:opacity-30 disabled:cursor-not-allowed"
+                title="Giữ nguyên lời nhập tay, chỉ lấy timestamps từ Gemini"
+              >
+                {isSyncing ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Đang đồng bộ...
+                  </>
+                ) : (
+                  <>
+                    <span className="text-base leading-none">⇌</span>
+                    Đồng bộ timestamps với lời nhập tay
+                  </>
+                )}
+              </button>
+
               {/* Status row */}
               <div className="mt-1.5 flex items-center justify-between gap-2 min-h-[18px]">
                 {transcribeFromCache ? (
@@ -890,7 +950,7 @@ export default function App() {
                 {audioFile && transcribeFromCache && (
                   <button
                     onClick={() => handleAiTranscribe(true)}
-                    disabled={isTranscribing}
+                    disabled={isTranscribing || isSyncing}
                     className="text-[10px] text-white/30 hover:text-violet-400 underline underline-offset-2 transition-colors shrink-0 disabled:opacity-30"
                   >
                     Nhận diện lại
@@ -1020,12 +1080,12 @@ export default function App() {
                           : "text-white/50 hover:bg-white/[0.04]"
                       }`}
                     >
-                      {/* Editable start-time badge */}
-                      {editingTimeIdx === i ? (
+                      {/* ── Start-time badge (editable) ── */}
+                      {editingTimeIdx === i && editingTimeSide === "start" ? (
                         <input
                           autoFocus
                           type="number"
-                          step="0.1"
+                          step="0.01"
                           min="0"
                           value={editingTimeVal}
                           onChange={(e) => setEditingTimeVal(e.target.value)}
@@ -1038,16 +1098,16 @@ export default function App() {
                         />
                       ) : (
                         <button
-                          onClick={() => startEditTime(i)}
+                          onClick={() => startEditTime(i, "start")}
                           className="font-mono text-violet-400/70 shrink-0 tabular-nums text-[10px] hover:text-amber-400 transition-colors cursor-text"
-                          title="Nhấn để chỉnh thời gian bắt đầu"
+                          title="Nhấn để chỉnh thời điểm bắt đầu"
                         >
                           {formatTime(line.start)}
                         </button>
                       )}
 
                       {editingLineIndex === i ? (
-                        /* ── Inline edit mode ── */
+                        /* ── Inline text-edit mode ── */
                         <>
                           <input
                             autoFocus
@@ -1069,10 +1129,7 @@ export default function App() {
                       ) : (
                         /* ── Display mode ── */
                         <>
-                          <span className="flex-1 truncate">{line.text}</span>
-                          <span className="font-mono text-white/20 shrink-0 tabular-nums text-[10px]">
-                            {(line.end - line.start).toFixed(1)}s
-                          </span>
+                          <span className="flex-1 truncate min-w-0">{line.text}</span>
                           <button
                             onClick={() => startEditLine(i)}
                             className="shrink-0 opacity-0 group-hover:opacity-100 text-white/30 hover:text-violet-400 transition-all"
@@ -1091,11 +1148,40 @@ export default function App() {
                           )}
                         </>
                       )}
+
+                      {/* ── End-time badge (editable) — always visible ── */}
+                      {editingLineIndex !== i && (
+                        editingTimeIdx === i && editingTimeSide === "end" ? (
+                          <input
+                            autoFocus
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={editingTimeVal}
+                            onChange={(e) => setEditingTimeVal(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") saveEditTime();
+                              if (e.key === "Escape") setEditingTimeIdx(null);
+                            }}
+                            onBlur={saveEditTime}
+                            className="w-14 bg-white/[0.08] border border-teal-500/40 rounded px-1 py-0.5 text-teal-300 outline-none text-[10px] font-mono text-center shrink-0"
+                          />
+                        ) : (
+                          <button
+                            onClick={() => startEditTime(i, "end")}
+                            className="font-mono text-teal-400/50 shrink-0 tabular-nums text-[10px] hover:text-teal-300 transition-colors cursor-text"
+                            title="Nhấn để chỉnh thời điểm kết thúc"
+                          >
+                            {formatTime(line.end)}
+                          </button>
+                        )
+                      )}
                     </div>
                   ))}
                 </div>
                 <p className="text-[10px] text-white/20 mt-1.5 text-center">
-                  Nhấn timestamp để chỉnh giờ · ✏ sửa lời · ✂ cắt đôi · Enter lưu · Esc huỷ
+                  <span className="text-violet-400/50">start</span> nhấn để sửa ·{" "}
+                  <span className="text-teal-400/50">end</span> nhấn để sửa · ✏ lời · ✂ cắt · Enter lưu · Esc huỷ
                 </p>
               </section>
             )}
