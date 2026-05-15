@@ -15,6 +15,78 @@ function formatTime(s: number) {
   return `${m}:${sec.toString().padStart(2, "0")}`;
 }
 
+// ── Word-by-word coloring helpers ─────────────────────────────────────────────
+// CSS mask-image gradients bleed across wrapped lines because they apply to the
+// element bounding box, not per text row. Word-by-word span coloring avoids this.
+
+function getWordLitStyle(s: { dot: string; current: React.CSSProperties }): React.CSSProperties {
+  // Fire/gradient styles use background-clip which breaks per-span; fall back to dot color
+  if ("background" in s.current || "WebkitBackgroundClip" in s.current) {
+    return {
+      color: s.dot,
+      textShadow: `0 0 18px ${s.dot}cc,0 0 36px ${s.dot}66,0 2px 0 rgba(0,0,0,0.55)`,
+    };
+  }
+  return s.current;
+}
+
+function KaraokeText({ text, progress, style, fontSize }: {
+  text: string;
+  progress: number;
+  style: { dot: string; current: React.CSSProperties };
+  fontSize: string;
+}) {
+  const litStyle = getWordLitStyle(style);
+  const segs = text.split(/(\s+)/);
+  const total = segs.filter(s => s.trim()).reduce((n, w) => n + w.length, 0);
+  let soFar = 0;
+  return (
+    <p style={{ fontSize, fontWeight: 700, letterSpacing: "0.015em", lineHeight: 1.35, textAlign: "center" }}>
+      {segs.map((seg, i) => {
+        if (!seg.trim()) return <span key={i}>{seg}</span>;
+        const mid = (soFar + seg.length / 2) / total;
+        soFar += seg.length;
+        return (
+          <span key={i} style={progress >= mid ? litStyle : { color: "rgba(255,255,255,0.28)" }}>
+            {seg}
+          </span>
+        );
+      })}
+    </p>
+  );
+}
+
+function WipeText({ text, wipeProgress, style, fontSize }: {
+  text: string;
+  wipeProgress: number;
+  style: { dot: string; current: React.CSSProperties };
+  fontSize: string;
+}) {
+  const litStyle = getWordLitStyle(style);
+  const segs = text.split(/(\s+)/);
+  const total = segs.filter(s => s.trim()).reduce((n, w) => n + w.length, 0);
+  let soFar = 0;
+  return (
+    <p style={{ fontSize, fontWeight: 700, letterSpacing: "0.015em", lineHeight: 1.35, textAlign: "center" }}>
+      {segs.map((seg, i) => {
+        if (!seg.trim()) return <span key={i}>{seg}</span>;
+        const mid = (soFar + seg.length / 2) / total;
+        soFar += seg.length;
+        return (
+          <span
+            key={i}
+            style={wipeProgress >= mid
+              ? { color: "transparent", textShadow: "none" }
+              : litStyle}
+          >
+            {seg}
+          </span>
+        );
+      })}
+    </p>
+  );
+}
+
 /** Shared canvas draw helper — called by both WebM and MP4 export */
 function drawLyricFrame(
   ctx: CanvasRenderingContext2D,
@@ -945,9 +1017,6 @@ export default function App() {
         (lineProgress * lineDuration - WIPE_HOLD) / (lineDuration - WIPE_HOLD)
       ))
     : lineProgress;
-  const wipePct   = (wipeProgress * 100).toFixed(2);
-  const edgePct   = Math.min(100, wipeProgress * 100 + 14).toFixed(2); // 14% soft edge
-  const wipeMask  = `linear-gradient(to right, transparent ${wipePct}%, white ${edgePct}%)`;
 
   // Per-effect opacity target (goes into Framer Motion animate so it wins)
   const effectOpacity =
@@ -1505,10 +1574,6 @@ export default function App() {
                           }}
                           style={{
                             maxWidth: "90%",
-                            ...(lyricEffect === "wipe" && {
-                              WebkitMaskImage: wipeMask,
-                              maskImage: wipeMask,
-                            }),
                             ...(effectFilter && { filter: effectFilter }),
                           }}
                         >
@@ -1547,37 +1612,21 @@ export default function App() {
                               </svg>
                             </div>
                           ) : lyricEffect === "karaoke" ? (
-                            /* Karaoke: dim base + bright clip that sweeps left → right */
-                            <div style={{ position: "relative" }}>
-                              {/* dim/unsung base */}
-                              <p style={{
-                                fontSize: `calc(clamp(1.3rem, 3.4vw, 2.1rem) * ${lyricFontSize / 100})`,
-                                fontWeight: 700,
-                                letterSpacing: "0.015em",
-                                lineHeight: 1.35,
-                                textAlign: "center",
-                                opacity: 0.3,
-                                ...activeStyle.current,
-                              }}>
-                                {currentLine?.text}
-                              </p>
-                              {/* bright/sung layer — revealed left → right */}
-                              <p style={{
-                                position: "absolute",
-                                top: 0, left: 0, right: 0, bottom: 0,
-                                fontSize: `calc(clamp(1.3rem, 3.4vw, 2.1rem) * ${lyricFontSize / 100})`,
-                                fontWeight: 700,
-                                letterSpacing: "0.015em",
-                                lineHeight: 1.35,
-                                textAlign: "center",
-                                overflow: "hidden",
-                                WebkitMaskImage: `linear-gradient(to right, white ${(lineProgress * 100).toFixed(2)}%, transparent ${Math.min(100, lineProgress * 100 + 8).toFixed(2)}%)`,
-                                maskImage: `linear-gradient(to right, white ${(lineProgress * 100).toFixed(2)}%, transparent ${Math.min(100, lineProgress * 100 + 8).toFixed(2)}%)`,
-                                ...activeStyle.current,
-                              }}>
-                                {currentLine?.text}
-                              </p>
-                            </div>
+                            /* Karaoke: word-by-word lit left→right (mask avoided — bleeds on wrapped lines) */
+                            <KaraokeText
+                              text={currentLine?.text ?? ""}
+                              progress={lineProgress}
+                              style={activeStyle}
+                              fontSize={`calc(clamp(1.3rem, 3.4vw, 2.1rem) * ${lyricFontSize / 100})`}
+                            />
+                          ) : lyricEffect === "wipe" ? (
+                            /* Wipe: word-by-word erase left→right after 1.5 s hold */
+                            <WipeText
+                              text={currentLine?.text ?? ""}
+                              wipeProgress={wipeProgress}
+                              style={activeStyle}
+                              fontSize={`calc(clamp(1.3rem, 3.4vw, 2.1rem) * ${lyricFontSize / 100})`}
+                            />
                           ) : (
                             <p style={{
                               fontSize: `calc(clamp(1.3rem, 3.4vw, 2.1rem) * ${lyricFontSize / 100})`,
