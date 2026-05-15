@@ -939,27 +939,35 @@ export default function App() {
               {/* Lyrics overlay */}
               <div
                 ref={lyricsViewRef}
-                className="absolute inset-0 flex flex-col justify-end items-center overflow-hidden px-10 pb-10 gap-3"
+                className="absolute inset-0 overflow-hidden px-8"
               >
                 {lyricsLines.length > 0 ? (
                   currentLineIndex >= 0 ? (
-                    /* ── 2-line display: next (above, grows) + current (slides in from above) ── */
-                    <>
-                      {/* Next line — fades in on key change, size/color driven live by growFactor */}
-                      <AnimatePresence>
+                    /*
+                     * 2-slot fixed layout — both lines have absolute positions so they
+                     * never overlap, no wipe mask, no y-animation that conflicts with
+                     * the slot positions.
+                     *
+                     * Current line  : anchored to bottom (pb-9)
+                     * Next line     : anchored above current (~3.6rem gap), grows with
+                     *                 growFactor during last 28% of the current line
+                     */
+                    <div className="absolute inset-0 flex flex-col justify-end items-center pb-9 gap-3">
+                      {/* Next line — fixed slot above, fades in/out on line change */}
+                      <AnimatePresence mode="sync">
                         {nextLine && (
                           <motion.p
                             key={`next-${currentLineIndex}`}
                             className="text-center"
-                            initial={{ opacity: 0, y: -14 }}
-                            animate={{ opacity: 0.38 + growFactor * 0.37, y: 0 }}
-                            exit={{ opacity: 0, y: -8, transition: { duration: 0.18 } }}
-                            transition={{ type: "spring", stiffness: 260, damping: 28 }}
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 0.35 + growFactor * 0.4 }}
+                            exit={{ opacity: 0, transition: { duration: 0.2 } }}
+                            transition={{ duration: 0.25 }}
                             style={{
-                              fontSize: `clamp(${0.82 + growFactor * 0.45}rem, ${2 + growFactor * 1.2}vw, ${1.15 + growFactor * 0.72}rem)`,
-                              fontWeight: growFactor > 0.6 ? 600 : 400,
-                              maxWidth: "82%",
-                              lineHeight: 1.4,
+                              fontSize: `clamp(${0.8 + growFactor * 0.5}rem, ${1.9 + growFactor * 1.3}vw, ${1.1 + growFactor * 0.8}rem)`,
+                              fontWeight: growFactor > 0.5 ? 600 : 400,
+                              maxWidth: "84%",
+                              lineHeight: 1.45,
                               ...activeStyle.next(growFactor),
                             }}
                           >
@@ -968,35 +976,28 @@ export default function App() {
                         )}
                       </AnimatePresence>
 
-                      {/* Current line — slides in FROM above (like the preview dropping down) + wipe mask */}
-                      <AnimatePresence>
-                        <motion.div
+                      {/* Current line — fixed slot at bottom, pure fade in/out */}
+                      <AnimatePresence mode="sync">
+                        <motion.p
                           key={`cur-${currentLineIndex}`}
                           className="text-center"
-                          initial={{ y: -52, scale: 0.82, opacity: 0.5 }}
-                          animate={{ y: 0, scale: 1, opacity: 1 }}
-                          exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.1 } }}
-                          transition={{ type: "spring", stiffness: 300, damping: 26 }}
+                          initial={{ opacity: 0, scale: 0.94 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 1.02, transition: { duration: 0.15 } }}
+                          transition={{ type: "spring", stiffness: 340, damping: 30 }}
                           style={{
+                            fontSize: "clamp(1.22rem, 3.2vw, 2rem)",
+                            fontWeight: 700,
+                            letterSpacing: "0.015em",
+                            lineHeight: 1.35,
                             maxWidth: "90%",
-                            WebkitMaskImage: wipeMask,
-                            maskImage: wipeMask,
+                            ...activeStyle.current,
                           }}
                         >
-                          <p
-                            style={{
-                              fontSize: "clamp(1.25rem, 3.3vw, 2.05rem)",
-                              fontWeight: 700,
-                              letterSpacing: "0.015em",
-                              lineHeight: 1.3,
-                              ...activeStyle.current,
-                            }}
-                          >
-                            {currentLine?.text}
-                          </p>
-                        </motion.div>
+                          {currentLine?.text}
+                        </motion.p>
                       </AnimatePresence>
-                    </>
+                    </div>
                   ) : (
                     /* ── Intro: timeline set but not reached first lyric yet ── */
                     <div className="flex flex-col items-center gap-3">
