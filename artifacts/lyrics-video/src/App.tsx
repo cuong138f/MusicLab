@@ -336,7 +336,24 @@ export default function App() {
   };
 
   const lineCount = lyricsText.split("\n").filter((l) => l.trim()).length;
-  const windowSize = 5;
+
+  // 2-line display data
+  const currentLine = currentLineIndex >= 0 ? lyricsLines[currentLineIndex] : null;
+  const nextLine =
+    currentLineIndex >= 0 && currentLineIndex < lyricsLines.length - 1
+      ? lyricsLines[currentLineIndex + 1]
+      : null;
+
+  // Progress within the current line (0 → 1) drives the left-to-right wipe
+  const lineProgress = currentLine
+    ? Math.max(0, Math.min(1,
+        (currentTime - currentLine.start) /
+        Math.max(0.001, currentLine.end - currentLine.start)
+      ))
+    : 0;
+  const wipePct = (lineProgress * 100).toFixed(2);
+  const edgePct = Math.min(100, lineProgress * 100 + 7).toFixed(2);
+  const wipeMask = `linear-gradient(to right, transparent ${wipePct}%, white ${edgePct}%)`;
 
   return (
     <div className="min-h-screen bg-[#080808] text-white flex flex-col select-none">
@@ -491,8 +508,8 @@ export default function App() {
 
               {/* Method explanation */}
               <p className="text-[10px] text-white/25 text-center leading-relaxed">
-                Phân tích năng lượng âm thanh để tìm khoảng lặng tự nhiên,<br />
-                tự động gán timestamp cho từng dòng lyrics
+                Phân tích âm thanh và cập nhật timeline theo lời đã nhập ở trên.<br />
+                Nhập xong lyrics → nhấn để gán thời gian tự động.
               </p>
             </div>
 
@@ -558,42 +575,53 @@ export default function App() {
               {/* Lyrics overlay */}
               <div
                 ref={lyricsViewRef}
-                className="absolute inset-0 flex flex-col items-center justify-center overflow-hidden px-10 py-10"
+                className="absolute inset-0 flex flex-col items-center justify-center overflow-hidden px-10 py-10 gap-5"
               >
                 {lyricsLines.length > 0 ? (
                   currentLineIndex >= 0 ? (
-                    /* ── Active lyrics window ── */
-                    <div className="w-full flex flex-col items-center gap-2 text-center">
-                      {lyricsLines.map((line, i) => {
-                        const isCurrent = i === currentLineIndex;
-                        const isPast = i < currentLineIndex;
-                        const distance = Math.abs(i - currentLineIndex);
-                        if (distance > windowSize) return null;
+                    /* ── 2-line display: current (wipe) + next (preview) ── */
+                    <>
+                      {/* Current line — disappears left to right as it plays */}
+                      <div
+                        className="text-center transition-all duration-300"
+                        style={{
+                          maxWidth: "88%",
+                          WebkitMaskImage: wipeMask,
+                          maskImage: wipeMask,
+                        }}
+                      >
+                        <p
+                          style={{
+                            fontSize: "clamp(1.2rem, 3.2vw, 2rem)",
+                            fontWeight: 700,
+                            color: "#ffffff",
+                            textShadow:
+                              "0 0 38px rgba(168,85,247,0.8), 0 2px 14px rgba(0,0,0,0.95)",
+                            letterSpacing: "0.01em",
+                            lineHeight: 1.3,
+                          }}
+                        >
+                          {currentLine?.text}
+                        </p>
+                      </div>
 
-                        return (
-                          <p
-                            key={i}
-                            data-line={i}
-                            className="lyric-line leading-tight"
-                            style={{
-                              fontSize: isCurrent ? "clamp(1.1rem, 2.8vw, 1.6rem)" : "clamp(0.75rem, 1.8vw, 1rem)",
-                              fontWeight: isCurrent ? 700 : 400,
-                              opacity: isCurrent ? 1 : isPast ? 0.18 : Math.max(0.12, 0.45 - distance * 0.08),
-                              color: "#ffffff",
-                              textShadow: isCurrent
-                                ? "0 0 40px rgba(168,85,247,0.7), 0 2px 12px rgba(0,0,0,0.9)"
-                                : "0 1px 6px rgba(0,0,0,0.7)",
-                              transform: isCurrent ? "scale(1.04)" : "scale(1)",
-                              letterSpacing: isCurrent ? "0.01em" : "0",
-                              maxWidth: "90%",
-                              margin: "0 auto",
-                            }}
-                          >
-                            {line.text}
-                          </p>
-                        );
-                      })}
-                    </div>
+                      {/* Next line — appears before its turn so viewer can read ahead */}
+                      {nextLine && (
+                        <p
+                          className="text-center transition-opacity duration-500"
+                          style={{
+                            fontSize: "clamp(0.85rem, 2.1vw, 1.25rem)",
+                            fontWeight: 400,
+                            color: "rgba(255,255,255,0.42)",
+                            textShadow: "0 1px 6px rgba(0,0,0,0.7)",
+                            maxWidth: "80%",
+                            lineHeight: 1.4,
+                          }}
+                        >
+                          {nextLine.text}
+                        </p>
+                      )}
+                    </>
                   ) : (
                     /* ── Intro: timeline set but not reached first lyric yet ── */
                     <div className="flex flex-col items-center gap-3">
