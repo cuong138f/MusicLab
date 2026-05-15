@@ -540,7 +540,6 @@ export default function App() {
     if (!lyricsLines.length) return;
 
     // Find the active line with pre-roll look-ahead.
-    // During gaps, holds the PREVIOUS line so the wipe stays fully complete.
     const lookAhead = currentTime + prerollSeconds;
     let idx = -1;
     for (let i = 0; i < lyricsLines.length; i++) {
@@ -549,6 +548,20 @@ export default function App() {
         if (lookAhead < lyricsLines[i].end) break; // exact match — stop
       }
     }
+
+    // During short pauses keep the previous line visible so wipe looks complete.
+    // During long instrumental gaps (≥ 4 s to next line start, adjusted for pre-roll),
+    // hide the lyric so the screen clears out for the dạo nhạc section.
+    if (idx >= 0 && currentTime > lyricsLines[idx].end) {
+      const nextStart = idx + 1 < lyricsLines.length
+        ? lyricsLines[idx + 1].start - prerollSeconds
+        : Infinity;
+      const gapRemaining = nextStart - currentTime;
+      if (gapRemaining > 4.0) {
+        idx = -1; // long instrumental break — hide lyrics
+      }
+    }
+
     setCurrentLineIndex(idx);
   }, [currentTime, lyricsLines, prerollSeconds]);
 
