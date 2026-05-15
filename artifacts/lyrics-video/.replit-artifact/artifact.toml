@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/lyrics-video/"
+title = "Lyrics Video Generator"
+version = "1.0.0"
+id = "artifacts/lyrics-video"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/lyrics-video/" ]
+localPort = 19575
+
+[services.development]
+run = "pnpm --filter @workspace/lyrics-video run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/lyrics-video", "run", "build" ]
+publicDir = "artifacts/lyrics-video/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "19575"
+BASE_PATH = "/lyrics-video/"
