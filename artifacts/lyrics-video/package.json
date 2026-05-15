@@ -75,6 +75,7 @@
     "zod": "catalog:"
   },
   "dependencies": {
+    "mp4-muxer": "^5.2.2",
     "wavesurfer.js": "^7.12.7"
   }
 }

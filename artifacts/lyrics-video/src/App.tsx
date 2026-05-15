@@ -15,6 +15,114 @@ function formatTime(s: number) {
   return `${m}:${sec.toString().padStart(2, "0")}`;
 }
 
+/** Shared canvas draw helper — called by both WebM and MP4 export */
+function drawLyricFrame(
+  ctx: CanvasRenderingContext2D,
+  W: number,
+  H: number,
+  time: number,
+  lines: LyricLine[],
+  coverImg: HTMLImageElement | null,
+  styleColors: { fill: string; glow: string },
+  effect: string,
+  fontSizePct: number,
+) {
+  const WIPE_HOLD = 1.5;
+  ctx.clearRect(0, 0, W, H);
+
+  // ── Background ──────────────────────────────────────────────
+  if (coverImg) {
+    ctx.save();
+    ctx.filter = "blur(22px) brightness(0.3) saturate(1.5)";
+    ctx.drawImage(coverImg, -60, -60, W + 120, H + 120);
+    ctx.filter = "none";
+    ctx.restore();
+    const sc = Math.min(W / coverImg.naturalWidth, H / coverImg.naturalHeight);
+    const cw = coverImg.naturalWidth * sc, ch = coverImg.naturalHeight * sc;
+    ctx.drawImage(coverImg, (W - cw) / 2, (H - ch) / 2, cw, ch);
+  } else {
+    const bg = ctx.createLinearGradient(0, 0, W, H);
+    bg.addColorStop(0, "#1a0533"); bg.addColorStop(0.5, "#0d1b3e"); bg.addColorStop(1, "#050d1a");
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+  }
+  const ov = ctx.createLinearGradient(0, H * 0.45, 0, H);
+  ov.addColorStop(0, "rgba(0,0,0,0)"); ov.addColorStop(1, "rgba(0,0,0,0.9)");
+  ctx.fillStyle = ov; ctx.fillRect(0, 0, W, H);
+
+  // ── Find active line ─────────────────────────────────────────
+  let curIdx = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (time >= lines[i].start && time < lines[i].end) { curIdx = i; break; }
+  }
+  if (curIdx < 0) return;
+
+  const cLine = lines[curIdx];
+  const lineDur = Math.max(0.001, cLine.end - cLine.start);
+  const lineElapsed = Math.max(0, time - cLine.start);
+  const lp = Math.min(1, lineElapsed / lineDur);
+  const wp = lineDur > WIPE_HOLD
+    ? Math.max(0, Math.min(1, (lineElapsed - WIPE_HOLD) / (lineDur - WIPE_HOLD)))
+    : lp;
+
+  const baseFontPx = Math.round(54 * fontSizePct / 100);
+  const textY = H - 40;
+  ctx.save();
+  ctx.font = `bold ${baseFontPx}px Inter, system-ui, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "bottom";
+
+  if (effect === "karaoke") {
+    ctx.globalAlpha = 0.28;
+    ctx.fillStyle = styleColors.fill;
+    ctx.fillText(cLine.text, W / 2, textY);
+    ctx.globalAlpha = 1;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(0, 0, lp * W, H); ctx.clip();
+    ctx.shadowColor = styleColors.glow; ctx.shadowBlur = 30;
+    ctx.fillStyle = styleColors.fill;
+    ctx.fillText(cLine.text, W / 2, textY);
+    ctx.restore();
+  } else if (effect === "fade") {
+    ctx.globalAlpha = Math.max(0, 1 - wp);
+    ctx.shadowColor = styleColors.glow; ctx.shadowBlur = 28;
+    ctx.fillStyle = styleColors.fill;
+    ctx.fillText(cLine.text, W / 2, textY);
+  } else if (effect === "blur") {
+    const blurPx = (wp * 14).toFixed(1);
+    ctx.filter = `blur(${blurPx}px)`;
+    ctx.globalAlpha = Math.max(0, 1 - wp * 0.85);
+    ctx.shadowColor = styleColors.glow; ctx.shadowBlur = 28;
+    ctx.fillStyle = styleColors.fill;
+    ctx.fillText(cLine.text, W / 2, textY);
+    ctx.filter = "none";
+  } else if (effect === "wave") {
+    ctx.shadowColor = styleColors.glow; ctx.shadowBlur = 28;
+    ctx.fillStyle = styleColors.fill;
+    ctx.fillText(cLine.text, W / 2, textY);
+    const wW = W * 0.72, wX0 = (W - W * 0.72) / 2;
+    const wY = textY + 18, amp = 9, cycles = 6;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(0, 0, wX0 + wW * lp, H); ctx.clip();
+    ctx.beginPath();
+    ctx.moveTo(wX0, wY);
+    for (let x = 0; x <= wW; x++) {
+      ctx.lineTo(wX0 + x, wY + Math.sin((x / wW) * Math.PI * 2 * cycles) * amp);
+    }
+    ctx.strokeStyle = styleColors.fill; ctx.shadowColor = styleColors.glow; ctx.shadowBlur = 14;
+    ctx.lineWidth = 3.5; ctx.lineCap = "round"; ctx.stroke();
+    ctx.restore();
+  } else {
+    // wipe: clip right portion, hold 1.5 s first
+    ctx.save();
+    ctx.beginPath(); ctx.rect(wp * W, 0, W * (1 - wp), H); ctx.clip();
+    ctx.shadowColor = styleColors.glow; ctx.shadowBlur = 28;
+    ctx.fillStyle = styleColors.fill;
+    ctx.fillText(cLine.text, W / 2, textY);
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
 /**
  * Analyze audio file and return N best cut points (in seconds):
  *   cuts[0]       = intro end   → first lyric starts here
@@ -270,10 +378,14 @@ export default function App() {
   const [editingTimeIdx, setEditingTimeIdx] = useState<number | null>(null);
   const [editingTimeVal, setEditingTimeVal] = useState("");
   const [editingTimeSide, setEditingTimeSide] = useState<"start" | "end">("start");
+  const [editingDurIdx, setEditingDurIdx] = useState<number | null>(null);
+  const [editingDurVal, setEditingDurVal] = useState("");
   const [isSyncing, setIsSyncing] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [exportingFormat, setExportingFormat] = useState<"webm" | "mp4">("webm");
   const [exportProgress, setExportProgress] = useState(0);
   const [lyricStyleId, setLyricStyleId] = useState<LyricStyleId>("purple");
+  const [lyricFontSize, setLyricFontSize] = useState(100);
 
   const waveformRef = useRef<HTMLDivElement>(null);
   const wavesurferRef = useRef<WaveSurfer | null>(null);
@@ -638,123 +750,126 @@ export default function App() {
     };
     wavesurferRef.current.once("finish", stop);
 
+    const fontPct = lyricFontSize;
     const drawFrame = () => {
       const ws = wavesurferRef.current;
       if (!ws || stopped) return;
       const time = ws.getCurrentTime();
       if (totalDur > 0) setExportProgress(Math.min(1, time / totalDur));
-
-      ctx.clearRect(0, 0, W, H);
-
-      // Background
-      if (coverImg) {
-        ctx.save();
-        ctx.filter = "blur(22px) brightness(0.3) saturate(1.5)";
-        ctx.drawImage(coverImg, -60, -60, W + 120, H + 120);
-        ctx.filter = "none";
-        ctx.restore();
-        const sc = Math.min(W / coverImg.naturalWidth, H / coverImg.naturalHeight);
-        const cw = coverImg.naturalWidth * sc, ch = coverImg.naturalHeight * sc;
-        ctx.drawImage(coverImg, (W - cw) / 2, (H - ch) / 2, cw, ch);
-      } else {
-        const bg = ctx.createLinearGradient(0, 0, W, H);
-        bg.addColorStop(0, "#1a0533"); bg.addColorStop(0.5, "#0d1b3e"); bg.addColorStop(1, "#050d1a");
-        ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
-      }
-      const ov = ctx.createLinearGradient(0, H * 0.45, 0, H);
-      ov.addColorStop(0, "rgba(0,0,0,0)"); ov.addColorStop(1, "rgba(0,0,0,0.9)");
-      ctx.fillStyle = ov; ctx.fillRect(0, 0, W, H);
-
-      // Find current line — only one line rendered, no next-line overlay
-      let curIdx = -1;
-      for (let i = 0; i < lines.length; i++) {
-        if (time >= lines[i].start && time < lines[i].end) { curIdx = i; break; }
-      }
-
-      if (curIdx >= 0) {
-        const cLine = lines[curIdx];
-        const lineDur = Math.max(0.001, cLine.end - cLine.start);
-        const lineElapsed = Math.max(0, time - cLine.start);
-        const lp = Math.min(1, lineElapsed / lineDur); // full line progress 0→1
-
-        // Wipe progress: hold for 1.5 s, then sweep
-        const wp = lineDur > WIPE_HOLD_EXP
-          ? Math.max(0, Math.min(1, (lineElapsed - WIPE_HOLD_EXP) / (lineDur - WIPE_HOLD_EXP)))
-          : lp;
-
-        const textY = H - 40;
-        ctx.save();
-        ctx.font = "bold 54px Inter, system-ui, sans-serif";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "bottom";
-
-        if (effect === "karaoke") {
-          // 1 — dim base (full text)
-          ctx.globalAlpha = 0.28;
-          ctx.fillStyle = styleColors.fill;
-          ctx.fillText(cLine.text, W / 2, textY);
-          // 2 — bright revealed portion (clip left side by lp)
-          ctx.globalAlpha = 1;
-          ctx.save();
-          ctx.beginPath(); ctx.rect(0, 0, lp * W, H); ctx.clip();
-          ctx.shadowColor = styleColors.glow; ctx.shadowBlur = 30;
-          ctx.fillStyle = styleColors.fill;
-          ctx.fillText(cLine.text, W / 2, textY);
-          ctx.restore();
-        } else if (effect === "fade") {
-          ctx.globalAlpha = Math.max(0, 1 - wp);
-          ctx.shadowColor = styleColors.glow; ctx.shadowBlur = 28;
-          ctx.fillStyle = styleColors.fill;
-          ctx.fillText(cLine.text, W / 2, textY);
-        } else if (effect === "blur") {
-          const blurPx = (wp * 14).toFixed(1);
-          ctx.filter = `blur(${blurPx}px)`;
-          ctx.globalAlpha = Math.max(0, 1 - wp * 0.85);
-          ctx.shadowColor = styleColors.glow; ctx.shadowBlur = 28;
-          ctx.fillStyle = styleColors.fill;
-          ctx.fillText(cLine.text, W / 2, textY);
-          ctx.filter = "none";
-        } else if (effect === "wave") {
-          // Static text + animated wave underline draws L→R with lp
-          ctx.shadowColor = styleColors.glow; ctx.shadowBlur = 28;
-          ctx.fillStyle = styleColors.fill;
-          ctx.fillText(cLine.text, W / 2, textY);
-
-          // Draw wave underline clipped to lp portion
-          const wW = W * 0.72;
-          const wX0 = (W - wW) / 2;
-          const wY = textY + 18;
-          const amp = 9, cycles = 6;
-          ctx.save();
-          ctx.beginPath(); ctx.rect(0, 0, wX0 + wW * lp, H); ctx.clip();
-          ctx.beginPath();
-          ctx.moveTo(wX0, wY);
-          for (let x = 0; x <= wW; x += 1) {
-            const wy = wY + Math.sin((x / wW) * Math.PI * 2 * cycles) * amp;
-            ctx.lineTo(wX0 + x, wy);
-          }
-          ctx.strokeStyle = styleColors.fill;
-          ctx.shadowColor = styleColors.glow; ctx.shadowBlur = 14;
-          ctx.lineWidth = 3.5;
-          ctx.lineCap = "round";
-          ctx.stroke();
-          ctx.restore();
-        } else {
-          // wipe (default): clip remaining right portion, hold 1.5 s first
-          ctx.save();
-          ctx.beginPath(); ctx.rect(wp * W, 0, W * (1 - wp), H); ctx.clip();
-          ctx.shadowColor = styleColors.glow; ctx.shadowBlur = 28;
-          ctx.fillStyle = styleColors.fill;
-          ctx.fillText(cLine.text, W / 2, textY);
-          ctx.restore();
-        }
-
-        ctx.restore();
-      }
-
+      drawLyricFrame(ctx, W, H, time, lines, coverImg, styleColors, effect, fontPct);
       if (!stopped) animId = requestAnimationFrame(drawFrame);
     };
     animId = requestAnimationFrame(drawFrame);
+  };
+
+  // ── MP4 export: offline rendering via WebCodecs + mp4-muxer ──────────────
+  const handleExportVideoMp4 = async () => {
+    if (!isReady || lyricsLines.length === 0) return;
+    if (typeof VideoEncoder === "undefined") {
+      alert("Xuất MP4 cần Chrome 94+ hoặc Edge 94+.\nVui lòng dùng nút WebM nếu trình duyệt không hỗ trợ.");
+      return;
+    }
+    setExportingFormat("mp4");
+    setIsExporting(true);
+    setExportProgress(0);
+
+    const W = 1280, H = 720, FPS = 30;
+    const canvas = document.createElement("canvas");
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext("2d")!;
+
+    const styleColors = CANVAS_COLORS[lyricStyleId] ?? CANVAS_COLORS.purple;
+    const effect = lyricEffect;
+    const fontPct = lyricFontSize;
+    const lines = lyricsLines;
+    const totalDur = duration || (lines.length > 0 ? lines[lines.length - 1].end + 2 : 60);
+    const totalFrames = Math.ceil(totalDur * FPS);
+
+    // Preload cover image
+    let coverImg: HTMLImageElement | null = null;
+    if (coverImage) {
+      coverImg = new window.Image();
+      coverImg.src = coverImage;
+      await new Promise<void>((r) => { coverImg!.onload = r; coverImg!.onerror = r; });
+    }
+
+    const { Muxer, ArrayBufferTarget } = await import("mp4-muxer");
+    const target = new ArrayBufferTarget();
+    const hasAudio = !!audioFile && typeof AudioEncoder !== "undefined";
+    const muxer = new Muxer({
+      target,
+      video: { codec: "avc", width: W, height: H },
+      ...(hasAudio ? { audio: { codec: "aac", sampleRate: 44100, numberOfChannels: 2 } } : {}),
+      fastStart: "in-memory",
+    });
+
+    // VideoEncoder
+    const videoEncoder = new VideoEncoder({
+      output: (chunk, meta) => muxer.addVideoChunk(chunk, meta ?? {}),
+      error: (e) => { throw e; },
+    });
+    videoEncoder.configure({
+      codec: "avc1.42001f",
+      width: W, height: H,
+      bitrate: 6_000_000,
+      framerate: FPS,
+      latencyMode: "quality",
+    });
+
+    // Audio: decode + encode before video frames
+    if (hasAudio && audioFile) {
+      const audioEncoder = new AudioEncoder({
+        output: (chunk, meta) => muxer.addAudioChunk(chunk, meta ?? {}),
+        error: (e) => { throw e; },
+      });
+      audioEncoder.configure({ codec: "mp4a.40.2", sampleRate: 44100, numberOfChannels: 2, bitrate: 128_000 });
+
+      const arrayBuf = await audioFile.arrayBuffer();
+      const audioCtx = new AudioContext({ sampleRate: 44100 });
+      const decoded = await audioCtx.decodeAudioData(arrayBuf);
+      await audioCtx.close();
+
+      const CHUNK = 4096;
+      const numCh = Math.min(decoded.numberOfChannels, 2);
+      for (let i = 0; i < decoded.length; i += CHUNK) {
+        const n = Math.min(CHUNK, decoded.length - i);
+        const data = new Float32Array(numCh * n);
+        for (let ch = 0; ch < numCh; ch++) {
+          const src = decoded.getChannelData(ch);
+          for (let j = 0; j < n; j++) data[ch * n + j] = src[i + j];
+        }
+        const ad = new AudioData({ format: "f32-planar", sampleRate: 44100, numberOfFrames: n, numberOfChannels: numCh, timestamp: Math.round(i / decoded.sampleRate * 1_000_000), data });
+        audioEncoder.encode(ad);
+        ad.close();
+      }
+      await audioEncoder.flush();
+    }
+
+    // Render all video frames offline (fast, no real-time dependency)
+    for (let fi = 0; fi < totalFrames; fi++) {
+      drawLyricFrame(ctx, W, H, fi / FPS, lines, coverImg, styleColors, effect, fontPct);
+      const vf = new VideoFrame(canvas, { timestamp: Math.round(fi / FPS * 1_000_000), duration: Math.round(1_000_000 / FPS) });
+      videoEncoder.encode(vf, { keyFrame: fi % 90 === 0 });
+      vf.close();
+      if (fi % 30 === 0) {
+        setExportProgress(fi / totalFrames);
+        await new Promise((r) => setTimeout(r, 0));
+      }
+    }
+
+    setExportProgress(0.95);
+    await videoEncoder.flush();
+    muxer.finalize();
+
+    const blob = new Blob([target.buffer], { type: "video/mp4" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = (audioFile?.name.replace(/\.[^/.]+$/, "") ?? "lyrics-video") + ".mp4";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    setIsExporting(false);
+    setExportProgress(0);
   };
 
   const handlePlayPause = () => wavesurferRef.current?.playPause();
@@ -1064,6 +1179,29 @@ export default function App() {
               </div>
             </section>
 
+            {/* Font size slider */}
+            <section>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-white/30">
+                  Cỡ chữ
+                </p>
+                <span className="text-[10px] font-mono text-violet-400/70">{lyricFontSize}%</span>
+              </div>
+              <input
+                type="range"
+                min={60}
+                max={180}
+                step={5}
+                value={lyricFontSize}
+                onChange={(e) => setLyricFontSize(Number(e.target.value))}
+                className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
+                style={{ accentColor: "#8B5CF6" }}
+              />
+              <div className="flex justify-between text-[9px] text-white/20 mt-1">
+                <span>60%</span><span>100%</span><span>180%</span>
+              </div>
+            </section>
+
             {/* Timeline list */}
             {lyricsLines.length > 0 && (
               <section>
@@ -1146,6 +1284,51 @@ export default function App() {
                               <Scissors className="w-3 h-3" />
                             </button>
                           )}
+                          {/* Duration badge — editable */}
+                          {editingDurIdx === i ? (
+                            <input
+                              autoFocus
+                              type="number"
+                              step="0.1"
+                              min="0.1"
+                              value={editingDurVal}
+                              onChange={(e) => setEditingDurVal(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  const d = parseFloat(editingDurVal);
+                                  if (!isNaN(d) && d > 0) {
+                                    setLyricsLines((prev) => prev.map((l, idx) =>
+                                      idx === i ? { ...l, end: l.start + d }
+                                      : idx === i + 1 ? { ...l, start: lyricsLines[i].start + d }
+                                      : l
+                                    ));
+                                  }
+                                  setEditingDurIdx(null);
+                                }
+                                if (e.key === "Escape") setEditingDurIdx(null);
+                              }}
+                              onBlur={() => {
+                                const d = parseFloat(editingDurVal);
+                                if (!isNaN(d) && d > 0) {
+                                  setLyricsLines((prev) => prev.map((l, idx) =>
+                                    idx === i ? { ...l, end: l.start + d }
+                                    : idx === i + 1 ? { ...l, start: lyricsLines[i].start + d }
+                                    : l
+                                  ));
+                                }
+                                setEditingDurIdx(null);
+                              }}
+                              className="w-12 bg-white/[0.08] border border-emerald-500/40 rounded px-1 py-0.5 text-emerald-300 outline-none text-[10px] font-mono text-center shrink-0"
+                            />
+                          ) : (
+                            <button
+                              onClick={() => { setEditingDurIdx(i); setEditingDurVal((line.end - line.start).toFixed(1)); }}
+                              className="font-mono text-white/25 shrink-0 tabular-nums text-[10px] hover:text-emerald-400 transition-colors cursor-text"
+                              title="Nhấn để chỉnh độ dài (giây)"
+                            >
+                              {(line.end - line.start).toFixed(1)}s
+                            </button>
+                          )}
                         </>
                       )}
 
@@ -1180,7 +1363,8 @@ export default function App() {
                   ))}
                 </div>
                 <p className="text-[10px] text-white/20 mt-1.5 text-center">
-                  <span className="text-violet-400/50">start</span> nhấn để sửa ·{" "}
+                  <span className="text-violet-400/50">start</span> ·{" "}
+                  <span className="text-emerald-400/50">giây</span> ·{" "}
                   <span className="text-teal-400/50">end</span> nhấn để sửa · ✏ lời · ✂ cắt · Enter lưu · Esc huỷ
                 </p>
               </section>
@@ -1251,7 +1435,7 @@ export default function App() {
                             /* Wave: static text + animated swoosh underline draws L→R */
                             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "4px" }}>
                               <p style={{
-                                fontSize: "clamp(1.3rem, 3.4vw, 2.1rem)",
+                                fontSize: `calc(clamp(1.3rem, 3.4vw, 2.1rem) * ${lyricFontSize / 100})`,
                                 fontWeight: 700,
                                 letterSpacing: "0.015em",
                                 lineHeight: 1.35,
@@ -1286,7 +1470,7 @@ export default function App() {
                             <div style={{ position: "relative" }}>
                               {/* dim/unsung base */}
                               <p style={{
-                                fontSize: "clamp(1.3rem, 3.4vw, 2.1rem)",
+                                fontSize: `calc(clamp(1.3rem, 3.4vw, 2.1rem) * ${lyricFontSize / 100})`,
                                 fontWeight: 700,
                                 letterSpacing: "0.015em",
                                 lineHeight: 1.35,
@@ -1300,7 +1484,7 @@ export default function App() {
                               <p style={{
                                 position: "absolute",
                                 top: 0, left: 0, right: 0, bottom: 0,
-                                fontSize: "clamp(1.3rem, 3.4vw, 2.1rem)",
+                                fontSize: `calc(clamp(1.3rem, 3.4vw, 2.1rem) * ${lyricFontSize / 100})`,
                                 fontWeight: 700,
                                 letterSpacing: "0.015em",
                                 lineHeight: 1.35,
@@ -1315,7 +1499,7 @@ export default function App() {
                             </div>
                           ) : (
                             <p style={{
-                              fontSize: "clamp(1.3rem, 3.4vw, 2.1rem)",
+                              fontSize: `calc(clamp(1.3rem, 3.4vw, 2.1rem) * ${lyricFontSize / 100})`,
                               fontWeight: 700,
                               letterSpacing: "0.015em",
                               lineHeight: 1.35,
@@ -1423,34 +1607,55 @@ export default function App() {
                     </div>
                   )}
 
-                  {/* Export button */}
-                  <button
-                    onClick={handleExportVideo}
-                    disabled={!isReady || lyricsLines.length === 0 || isExporting}
-                    title="Xuất video WebM (thời gian thực)"
-                    className="shrink-0 relative h-9 px-4 rounded-xl flex items-center gap-2 font-semibold text-xs transition-all
-                      bg-gradient-to-r from-fuchsia-600 to-violet-600
-                      hover:from-fuchsia-500 hover:to-violet-500
-                      shadow-md shadow-violet-500/25
-                      disabled:opacity-30 disabled:cursor-not-allowed disabled:shadow-none overflow-hidden"
-                  >
-                    {isExporting ? (
-                      <>
-                        {/* Progress bar underneath */}
-                        <span
-                          className="absolute inset-0 bg-white/10 origin-left"
-                          style={{ transform: `scaleX(${exportProgress})`, transition: "transform 0.5s linear" }}
-                        />
-                        <Loader2 className="w-3.5 h-3.5 animate-spin relative z-10" />
-                        <span className="relative z-10">{Math.round(exportProgress * 100)}%</span>
-                      </>
-                    ) : (
-                      <>
-                        <Download className="w-3.5 h-3.5" />
-                        Xuất Video
-                      </>
-                    )}
-                  </button>
+                  {/* Export buttons — WebM (real-time) + MP4 (offline WebCodecs) */}
+                  <div className="shrink-0 flex gap-1.5">
+                    <button
+                      onClick={() => { setExportingFormat("webm"); handleExportVideo(); }}
+                      disabled={!isReady || lyricsLines.length === 0 || isExporting}
+                      title="Xuất WebM — realtime, hỗ trợ mọi trình duyệt"
+                      className="relative h-9 px-3 rounded-xl flex items-center gap-1.5 font-semibold text-xs transition-all
+                        border border-violet-500/40 text-violet-300
+                        hover:bg-violet-500/10 hover:border-violet-400/60
+                        disabled:opacity-30 disabled:cursor-not-allowed overflow-hidden"
+                    >
+                      {isExporting && exportingFormat === "webm" ? (
+                        <>
+                          <span className="absolute inset-0 bg-violet-500/20 origin-left" style={{ transform: `scaleX(${exportProgress})`, transition: "transform 0.4s linear" }} />
+                          <Loader2 className="w-3 h-3 animate-spin relative z-10" />
+                          <span className="relative z-10">{Math.round(exportProgress * 100)}%</span>
+                        </>
+                      ) : (
+                        <>
+                          <Download className="w-3 h-3" />
+                          WebM
+                        </>
+                      )}
+                    </button>
+
+                    <button
+                      onClick={handleExportVideoMp4}
+                      disabled={!isReady || lyricsLines.length === 0 || isExporting}
+                      title="Xuất MP4 — offline rendering, cần Chrome/Edge 94+"
+                      className="relative h-9 px-3 rounded-xl flex items-center gap-1.5 font-semibold text-xs transition-all
+                        bg-gradient-to-r from-fuchsia-600 to-violet-600
+                        hover:from-fuchsia-500 hover:to-violet-500
+                        shadow-md shadow-violet-500/25
+                        disabled:opacity-30 disabled:cursor-not-allowed disabled:shadow-none overflow-hidden"
+                    >
+                      {isExporting && exportingFormat === "mp4" ? (
+                        <>
+                          <span className="absolute inset-0 bg-white/15 origin-left" style={{ transform: `scaleX(${exportProgress})`, transition: "transform 0.4s linear" }} />
+                          <Loader2 className="w-3 h-3 animate-spin relative z-10" />
+                          <span className="relative z-10">{Math.round(exportProgress * 100)}%</span>
+                        </>
+                      ) : (
+                        <>
+                          <Download className="w-3 h-3" />
+                          MP4
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
               </div>
             ) : (
