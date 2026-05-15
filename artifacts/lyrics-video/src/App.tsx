@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import WaveSurfer from "wavesurfer.js";
-import { Music, Image, Play, Pause, Wand2, SkipBack, Upload, Loader2, Sparkles, Pencil, Check, X } from "lucide-react";
+import { Music, Image, Play, Pause, Wand2, SkipBack, Upload, Loader2, Sparkles, Pencil, Check, X, Download } from "lucide-react";
 
 interface LyricLine {
   text: string;
@@ -164,6 +164,8 @@ export default function App() {
   const [transcribeFromCache, setTranscribeFromCache] = useState(false);
   const [editingLineIndex, setEditingLineIndex] = useState<number | null>(null);
   const [editingText, setEditingText] = useState("");
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportProgress, setExportProgress] = useState(0);
 
   const waveformRef = useRef<HTMLDivElement>(null);
   const wavesurferRef = useRef<WaveSurfer | null>(null);
@@ -370,6 +372,138 @@ export default function App() {
 
   const cancelEditLine = () => setEditingLineIndex(null);
 
+  const handleExportVideo = async () => {
+    if (!wavesurferRef.current || !isReady) return;
+    setIsExporting(true);
+    setExportProgress(0);
+
+    const W = 1280, H = 720;
+    const canvas = document.createElement("canvas");
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext("2d")!;
+
+    // Audio stream from wavesurfer's media element
+    const mediaEl = wavesurferRef.current.getMediaElement() as HTMLMediaElement & {
+      captureStream?: () => MediaStream;
+      mozCaptureStream?: () => MediaStream;
+    };
+    const audioStream = mediaEl.captureStream?.() ?? mediaEl.mozCaptureStream?.();
+    const canvasStream = canvas.captureStream(30);
+    const combined = audioStream
+      ? new MediaStream([...canvasStream.getVideoTracks(), ...audioStream.getAudioTracks()])
+      : canvasStream;
+
+    const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
+      ? "video/webm;codecs=vp9" : "video/webm";
+    const recorder = new MediaRecorder(combined, { mimeType, videoBitsPerSecond: 6_000_000 });
+    const chunks: BlobPart[] = [];
+    recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+    recorder.onstop = () => {
+      const blob = new Blob(chunks, { type: mimeType });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = (audioFile?.name.replace(/\.[^/.]+$/, "") ?? "lyrics-video") + ".webm";
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      setIsExporting(false);
+      setExportProgress(0);
+    };
+
+    // Preload cover image onto canvas-friendly Image
+    let coverImg: HTMLImageElement | null = null;
+    if (coverImage) {
+      coverImg = new window.Image();
+      coverImg.src = coverImage;
+      await new Promise<void>((r) => { coverImg!.onload = r; coverImg!.onerror = r; });
+    }
+
+    const lines = lyricsLines; // snapshot
+    const totalDur = wavesurferRef.current.getDuration();
+    wavesurferRef.current.seekTo(0);
+    await new Promise((r) => setTimeout(r, 100));
+    recorder.start(200);
+    wavesurferRef.current.play();
+
+    let animId: number;
+    let stopped = false;
+
+    const stop = () => {
+      if (stopped) return;
+      stopped = true;
+      cancelAnimationFrame(animId);
+      setTimeout(() => recorder.stop(), 400);
+    };
+    wavesurferRef.current.once("finish", stop);
+
+    const drawFrame = () => {
+      const ws = wavesurferRef.current;
+      if (!ws || stopped) return;
+      const time = ws.getCurrentTime();
+      if (totalDur > 0) setExportProgress(Math.min(1, time / totalDur));
+
+      ctx.clearRect(0, 0, W, H);
+
+      // Background
+      if (coverImg) {
+        ctx.save();
+        ctx.filter = "blur(22px) brightness(0.3) saturate(1.5)";
+        ctx.drawImage(coverImg, -60, -60, W + 120, H + 120);
+        ctx.filter = "none";
+        ctx.restore();
+        const sc = Math.min(W / coverImg.naturalWidth, H / coverImg.naturalHeight);
+        const cw = coverImg.naturalWidth * sc, ch = coverImg.naturalHeight * sc;
+        ctx.drawImage(coverImg, (W - cw) / 2, (H - ch) / 2, cw, ch);
+      } else {
+        const bg = ctx.createLinearGradient(0, 0, W, H);
+        bg.addColorStop(0, "#1a0533"); bg.addColorStop(0.5, "#0d1b3e"); bg.addColorStop(1, "#050d1a");
+        ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+      }
+      const ov = ctx.createLinearGradient(0, H * 0.45, 0, H);
+      ov.addColorStop(0, "rgba(0,0,0,0)"); ov.addColorStop(1, "rgba(0,0,0,0.9)");
+      ctx.fillStyle = ov; ctx.fillRect(0, 0, W, H);
+
+      // Find current line
+      let curIdx = -1;
+      for (let i = 0; i < lines.length; i++) {
+        if (time >= lines[i].start && time < lines[i].end) { curIdx = i; break; }
+      }
+
+      if (curIdx >= 0) {
+        const cLine = lines[curIdx], nLine = lines[curIdx + 1];
+        const lp = Math.max(0, Math.min(1, (time - cLine.start) / Math.max(0.001, cLine.end - cLine.start)));
+        const gf = Math.max(0, Math.min(1, (lp - 0.72) / 0.28));
+
+        // Next line — grows as current wipes
+        if (nLine) {
+          ctx.save();
+          const nSz = Math.round(28 + gf * 22);
+          ctx.font = `400 ${nSz}px Inter, system-ui, sans-serif`;
+          ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+          ctx.shadowColor = `rgba(150,120,255,${gf * 0.5})`; ctx.shadowBlur = gf * 20;
+          ctx.fillStyle = `rgba(210,200,255,${0.4 + gf * 0.35})`;
+          ctx.fillText(nLine.text, W / 2, H - 86);
+          ctx.restore();
+        }
+
+        // Current line — wipe left to right
+        ctx.save();
+        ctx.beginPath(); ctx.rect(lp * W, 0, W * (1 - lp), H); ctx.clip();
+        ctx.font = "bold 52px Inter, system-ui, sans-serif";
+        ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+        ctx.strokeStyle = "rgba(0,0,0,0.6)"; ctx.lineWidth = 4;
+        ctx.strokeText(cLine.text, W / 2, H - 28);
+        ctx.shadowColor = "rgba(150,100,255,0.8)"; ctx.shadowBlur = 32;
+        ctx.fillStyle = "#F2EEFF";
+        ctx.fillText(cLine.text, W / 2, H - 28);
+        ctx.restore();
+      }
+
+      if (!stopped) animId = requestAnimationFrame(drawFrame);
+    };
+    animId = requestAnimationFrame(drawFrame);
+  };
+
   const handlePlayPause = () => wavesurferRef.current?.playPause();
   const handleRestart = () => {
     if (!wavesurferRef.current) return;
@@ -396,6 +530,9 @@ export default function App() {
   const wipePct = (lineProgress * 100).toFixed(2);
   const edgePct = Math.min(100, lineProgress * 100 + 7).toFixed(2);
   const wipeMask = `linear-gradient(to right, transparent ${wipePct}%, white ${edgePct}%)`;
+
+  // Next line grows from small/dim → big/bright during the last 28% of the current line
+  const growFactor = Math.max(0, Math.min(1, (lineProgress - 0.72) / 0.28));
 
   return (
     <div className="min-h-screen bg-[#080808] text-white flex flex-col select-none">
@@ -677,19 +814,18 @@ export default function App() {
               >
                 {lyricsLines.length > 0 ? (
                   currentLineIndex >= 0 ? (
-                    /* ── 2-line display: next (above) + current (bottom, fly-up) ── */
+                    /* ── 2-line display: next (above, grows) + current (bottom, fly-up + wipe) ── */
                     <>
-                      {/* Next line — preview, flies up softly, sits above current */}
+                      {/* Next line — no key, stays mounted; size/color driven by growFactor */}
                       {nextLine && (
                         <p
-                          key={`next-${currentLineIndex}`}
-                          className="lyric-fly-next text-center"
+                          className="text-center"
                           style={{
-                            fontSize: "clamp(0.82rem, 2vw, 1.15rem)",
-                            fontWeight: 400,
-                            color: "rgba(255,255,255,0.38)",
-                            textShadow: "0 1px 8px rgba(0,0,0,0.8)",
-                            maxWidth: "78%",
+                            fontSize: `clamp(${0.82 + growFactor * 0.45}rem, ${2 + growFactor * 1.2}vw, ${1.15 + growFactor * 0.72}rem)`,
+                            fontWeight: growFactor > 0.6 ? 600 : 400,
+                            color: `rgba(210,198,255,${0.38 + growFactor * 0.37})`,
+                            textShadow: `0 1px 10px rgba(0,0,0,0.85), 0 0 ${Math.round(growFactor * 28)}px rgba(150,110,255,${(growFactor * 0.55).toFixed(2)})`,
+                            maxWidth: "82%",
                             lineHeight: 1.4,
                           }}
                         >
@@ -697,7 +833,7 @@ export default function App() {
                         </p>
                       )}
 
-                      {/* Current line — flies up, wipes left→right as it plays */}
+                      {/* Current line — remounts on each new line (fly-up) + wipe mask */}
                       <div
                         key={`cur-${currentLineIndex}`}
                         className="lyric-fly-current text-center"
@@ -709,12 +845,12 @@ export default function App() {
                       >
                         <p
                           style={{
-                            fontSize: "clamp(1.2rem, 3.2vw, 2rem)",
+                            fontSize: "clamp(1.25rem, 3.3vw, 2.05rem)",
                             fontWeight: 700,
-                            color: "#ffffff",
+                            color: "#F2EEFF",
                             textShadow:
-                              "0 0 40px rgba(168,85,247,0.85), 0 2px 16px rgba(0,0,0,0.95)",
-                            letterSpacing: "0.01em",
+                              "0 2px 0 rgba(0,0,0,0.55), -1px -1px 0 rgba(0,0,0,0.4), 1px -1px 0 rgba(0,0,0,0.4), -1px 1px 0 rgba(0,0,0,0.4), 1px 1px 0 rgba(0,0,0,0.4), 0 0 35px rgba(150,110,255,0.75), 0 0 65px rgba(150,110,255,0.35)",
+                            letterSpacing: "0.015em",
                             lineHeight: 1.3,
                           }}
                         >
@@ -817,6 +953,35 @@ export default function App() {
                       </span>
                     </div>
                   )}
+
+                  {/* Export button */}
+                  <button
+                    onClick={handleExportVideo}
+                    disabled={!isReady || lyricsLines.length === 0 || isExporting}
+                    title="Xuất video WebM (thời gian thực)"
+                    className="shrink-0 relative h-9 px-4 rounded-xl flex items-center gap-2 font-semibold text-xs transition-all
+                      bg-gradient-to-r from-fuchsia-600 to-violet-600
+                      hover:from-fuchsia-500 hover:to-violet-500
+                      shadow-md shadow-violet-500/25
+                      disabled:opacity-30 disabled:cursor-not-allowed disabled:shadow-none overflow-hidden"
+                  >
+                    {isExporting ? (
+                      <>
+                        {/* Progress bar underneath */}
+                        <span
+                          className="absolute inset-0 bg-white/10 origin-left"
+                          style={{ transform: `scaleX(${exportProgress})`, transition: "transform 0.5s linear" }}
+                        />
+                        <Loader2 className="w-3.5 h-3.5 animate-spin relative z-10" />
+                        <span className="relative z-10">{Math.round(exportProgress * 100)}%</span>
+                      </>
+                    ) : (
+                      <>
+                        <Download className="w-3.5 h-3.5" />
+                        Xuất Video
+                      </>
+                    )}
+                  </button>
                 </div>
               </div>
             ) : (
