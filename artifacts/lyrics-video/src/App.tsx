@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import WaveSurfer from "wavesurfer.js";
-import { Music, Image, Play, Pause, Wand2, SkipBack, Upload, Loader2, Sparkles, Pencil, Check, X, Download, Scissors } from "lucide-react";
+import { Music, Image, Play, Pause, Wand2, SkipBack, Upload, Loader2, Sparkles, Pencil, Check, X, Download, Scissors, Trash2 } from "lucide-react";
 
 interface LyricLine {
   text: string;
@@ -701,6 +701,13 @@ export default function App() {
     ];
     setLyricsLines(newLines);
     setLyricsText(newLines.map((l) => l.text).join("\n"));
+  };
+
+  const deleteLine = (i: number) => {
+    const newLines = lyricsLines.filter((_, idx) => idx !== i);
+    setLyricsLines(newLines);
+    setLyricsText(newLines.map((l) => l.text).join("\n"));
+    if (currentLineIndex >= newLines.length) setCurrentLineIndex(newLines.length - 1);
   };
 
   // Canvas color map — one entry per lyric style id
@@ -1421,13 +1428,24 @@ export default function App() {
                           </button>
                         )
                       )}
+
+                      {/* ── Delete button ── */}
+                      {editingLineIndex !== i && (
+                        <button
+                          onClick={() => deleteLine(i)}
+                          className="shrink-0 opacity-0 group-hover:opacity-100 text-white/20 hover:text-red-400 transition-all ml-0.5"
+                          title="Xoá dòng này"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
                 <p className="text-[10px] text-white/20 mt-1.5 text-center">
                   <span className="text-violet-400/50">start</span> ·{" "}
                   <span className="text-emerald-400/50">giây</span> ·{" "}
-                  <span className="text-teal-400/50">end</span> nhấn để sửa · ✏ lời · ✂ cắt · Enter lưu · Esc huỷ
+                  <span className="text-teal-400/50">end</span> nhấn để sửa · ✏ lời · ✂ cắt · 🗑 xoá · Enter lưu · Esc huỷ
                 </p>
               </section>
             )}
