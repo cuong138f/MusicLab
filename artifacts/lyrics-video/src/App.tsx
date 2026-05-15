@@ -15,6 +15,12 @@ function formatTime(s: number) {
   return `${m}:${sec.toString().padStart(2, "0")}`;
 }
 
+function formatTimeFull(s: number) {
+  const m = Math.floor(s / 60);
+  const secStr = (s % 60).toFixed(1).padStart(4, "0");
+  return `${m}:${secStr}`;
+}
+
 // ── Word-by-word coloring helpers ─────────────────────────────────────────────
 // CSS mask-image gradients bleed across wrapped lines because they apply to the
 // element bounding box, not per text row. Word-by-word span coloring avoids this.
@@ -792,6 +798,61 @@ export default function App() {
     green:  { fill: "#69FF47", glow: "rgba(80,255,50,0.90)"  },
   };
 
+  const handleExportTimeline = () => {
+    if (!lyricsLines.length) return;
+    const songName = audioFile?.name.replace(/\.[^.]+$/, "") ?? "timeline";
+    const rows = lyricsLines.map(
+      (l) => `${formatTimeFull(l.start)}\t${formatTimeFull(l.end)}\t${l.text}`
+    );
+    const header = [
+      "# Lyrics Timeline Export",
+      `# Bài: ${songName}`,
+      "# Định dạng: bắt_đầu  kết_thúc  lời_ca",
+      "# Thời gian: m:ss.s (vd: 0:43.0 = 43 giây)",
+      "# Có thể sửa lời và thời gian, rồi Import lại.",
+      "",
+    ].join("\n");
+    const content = header + rows.join("\n");
+    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${songName}_timeline.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportTimeline = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string;
+      const lines: LyricLine[] = [];
+      for (const raw of text.split("\n")) {
+        const line = raw.trim();
+        if (!line || line.startsWith("#")) continue;
+        const parts = line.split("\t");
+        if (parts.length < 3) continue;
+        const parseT = (s: string) => {
+          const [min, sec] = s.trim().split(":").map(Number);
+          return (min ?? 0) * 60 + (sec ?? 0);
+        };
+        const start = parseT(parts[0]);
+        const end = parseT(parts[1]);
+        const text2 = parts.slice(2).join("\t").trim();
+        if (isNaN(start) || isNaN(end) || !text2) continue;
+        lines.push({ start, end, text: text2 });
+      }
+      if (!lines.length) return;
+      lines.sort((a, b) => a.start - b.start);
+      setLyricsLines(lines);
+      setLyricsText(lines.map((l) => l.text).join("\n"));
+    };
+    reader.readAsText(file, "utf-8");
+    e.target.value = "";
+  };
+
   const handleExportVideo = async () => {
     if (!wavesurferRef.current || !isReady) return;
     setIsExporting(true);
@@ -1344,9 +1405,36 @@ export default function App() {
             {/* Timeline list */}
             {lyricsLines.length > 0 && (
               <section>
-                <p className="text-[10px] font-semibold tracking-[0.12em] uppercase text-white/40 mb-2">
-                  Timeline — {lyricsLines.length} dòng
-                </p>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-[10px] font-semibold tracking-[0.12em] uppercase text-white/40">
+                    Timeline — {lyricsLines.length} dòng
+                  </p>
+                  <div className="flex items-center gap-1">
+                    {/* Import */}
+                    <label
+                      className="flex items-center gap-1 text-[10px] text-white/30 hover:text-violet-400 transition-colors cursor-pointer px-2 py-1 rounded-lg hover:bg-white/[0.04]"
+                      title="Import timeline từ file .txt"
+                    >
+                      <Upload className="w-3 h-3" />
+                      <span>Import</span>
+                      <input
+                        type="file"
+                        accept=".txt,text/plain"
+                        className="sr-only"
+                        onChange={handleImportTimeline}
+                      />
+                    </label>
+                    {/* Export */}
+                    <button
+                      onClick={handleExportTimeline}
+                      className="flex items-center gap-1 text-[10px] text-white/30 hover:text-emerald-400 transition-colors px-2 py-1 rounded-lg hover:bg-white/[0.04]"
+                      title="Export timeline ra file .txt để sửa tay"
+                    >
+                      <Download className="w-3 h-3" />
+                      <span>Export</span>
+                    </button>
+                  </div>
+                </div>
                 <div className="space-y-0.5 max-h-52 overflow-y-auto rounded-xl border border-white/[0.06] bg-white/[0.02] p-1">
                   {lyricsLines.map((line, i) => (
                     <div
