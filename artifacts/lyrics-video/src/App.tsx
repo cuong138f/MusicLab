@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import WaveSurfer from "wavesurfer.js";
-import { Music, Image, Play, Pause, Wand2, SkipBack, Upload, Loader2 } from "lucide-react";
+import { Music, Image, Play, Pause, Wand2, SkipBack, Upload, Loader2, Sparkles } from "lucide-react";
 
 interface LyricLine {
   text: string;
@@ -159,6 +159,8 @@ export default function App() {
   const [currentLineIndex, setCurrentLineIndex] = useState(-1);
   const [isReady, setIsReady] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [transcribeError, setTranscribeError] = useState<string | null>(null);
 
   const waveformRef = useRef<HTMLDivElement>(null);
   const wavesurferRef = useRef<WaveSurfer | null>(null);
@@ -282,6 +284,50 @@ export default function App() {
     }
   };
 
+  const handleAiTranscribe = async () => {
+    if (!audioFile) return;
+    setIsTranscribing(true);
+    setTranscribeError(null);
+
+    try {
+      // Read audio as base64
+      const arrayBuffer = await audioFile.arrayBuffer();
+      const uint8 = new Uint8Array(arrayBuffer);
+      let binary = "";
+      for (let i = 0; i < uint8.byteLength; i++) binary += String.fromCharCode(uint8[i]);
+      const audioBase64 = btoa(binary);
+      const mimeType = audioFile.type || "audio/mpeg";
+
+      const res = await fetch("/api/transcribe-audio", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ audioBase64, mimeType }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(data.error ?? `HTTP ${res.status}`);
+      }
+
+      const data = await res.json() as { lines: { text: string; start: number; end: number }[] };
+      const lines = data.lines ?? [];
+
+      if (!lines.length) {
+        setTranscribeError("AI không tìm thấy lời bài hát trong file này.");
+        return;
+      }
+
+      // Populate both lyricsText and timed lines
+      setLyricsText(lines.map((l) => l.text).join("\n"));
+      setLyricsLines(lines);
+      setCurrentLineIndex(-1);
+    } catch (err) {
+      setTranscribeError(err instanceof Error ? err.message : "Lỗi không xác định");
+    } finally {
+      setIsTranscribing(false);
+    }
+  };
+
   const handlePlayPause = () => wavesurferRef.current?.playPause();
   const handleRestart = () => {
     if (!wavesurferRef.current) return;
@@ -364,6 +410,47 @@ export default function App() {
               </label>
             </section>
 
+            {/* AI Transcribe Button */}
+            <section>
+              <p className="text-[10px] font-semibold tracking-[0.12em] uppercase text-white/40 mb-2">
+                Nhận diện lời bài hát (AI)
+              </p>
+              <button
+                onClick={handleAiTranscribe}
+                disabled={!audioFile || isTranscribing || isAnalyzing}
+                className="w-full h-11 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-all
+                  bg-gradient-to-r from-emerald-600 to-teal-600
+                  hover:from-emerald-500 hover:to-teal-500
+                  shadow-lg shadow-emerald-500/20
+                  disabled:opacity-30 disabled:cursor-not-allowed disabled:shadow-none"
+              >
+                {isTranscribing ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Đang nhận diện...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4" />
+                    Nhận diện với Gemini AI
+                  </>
+                )}
+              </button>
+              {transcribeError && (
+                <p className="mt-2 text-[11px] text-red-400/80 leading-relaxed">{transcribeError}</p>
+              )}
+              <p className="mt-1.5 text-[10px] text-white/20 leading-relaxed">
+                Gemini sẽ tự nghe và trả về lời + timestamp — không cần nhập tay
+              </p>
+            </section>
+
+            {/* Divider */}
+            <div className="flex items-center gap-2">
+              <div className="flex-1 h-px bg-white/[0.06]" />
+              <span className="text-[10px] text-white/20">hoặc nhập thủ công</span>
+              <div className="flex-1 h-px bg-white/[0.06]" />
+            </div>
+
             {/* Lyrics Input */}
             <section>
               <div className="flex items-center justify-between mb-2">
@@ -374,7 +461,7 @@ export default function App() {
                 value={lyricsText}
                 onChange={(e) => setLyricsText(e.target.value)}
                 placeholder={"Nhập lyrics ở đây...\nMỗi dòng là một câu\nAuto Timeline sẽ tự xác định thời điểm"}
-                className="w-full h-48 bg-white/[0.03] border border-white/[0.08] focus:border-violet-500/40 rounded-xl p-4 text-sm text-white/70 placeholder-white/20 resize-none outline-none transition-all font-mono leading-relaxed"
+                className="w-full h-36 bg-white/[0.03] border border-white/[0.08] focus:border-violet-500/40 rounded-xl p-4 text-sm text-white/70 placeholder-white/20 resize-none outline-none transition-all font-mono leading-relaxed"
               />
             </section>
 

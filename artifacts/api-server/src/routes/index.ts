@@ -8,6 +8,7 @@ import chatRouter from "./chat";
 import speakingRouter from "./speaking";
 import gamificationRouter from "./gamification";
 import leaderboardRouter from "./leaderboard";
+import transcribeRouter from "./transcribe";
 
 const router: IRouter = Router();
 
@@ -20,5 +21,6 @@ router.use("/chat", chatRouter);
 router.use("/speaking", speakingRouter);
 router.use("/gamification", gamificationRouter);
 router.use("/leaderboard", leaderboardRouter);
+router.use(transcribeRouter);
 
 export default router;
