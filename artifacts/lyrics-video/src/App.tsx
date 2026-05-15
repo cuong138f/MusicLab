@@ -943,59 +943,34 @@ export default function App() {
               >
                 {lyricsLines.length > 0 ? (
                   currentLineIndex >= 0 ? (
-                    /*
-                     * 2-slot fixed layout — both lines have absolute positions so they
-                     * never overlap, no wipe mask, no y-animation that conflicts with
-                     * the slot positions.
-                     *
-                     * Current line  : anchored to bottom (pb-9)
-                     * Next line     : anchored above current (~3.6rem gap), grows with
-                     *                 growFactor during last 28% of the current line
-                     */
-                    <div className="absolute inset-0 flex flex-col justify-end items-center pb-9 gap-3">
-                      {/* Next line — fixed slot above, fades in/out on line change */}
+                    /* Current line only — fades in, then wipes left→right as it's sung */
+                    <div className="absolute inset-0 flex flex-col justify-end items-center pb-10">
                       <AnimatePresence mode="sync">
-                        {nextLine && (
-                          <motion.p
-                            key={`next-${currentLineIndex}`}
-                            className="text-center"
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 0.35 + growFactor * 0.4 }}
-                            exit={{ opacity: 0, transition: { duration: 0.2 } }}
-                            transition={{ duration: 0.25 }}
-                            style={{
-                              fontSize: `clamp(${0.8 + growFactor * 0.5}rem, ${1.9 + growFactor * 1.3}vw, ${1.1 + growFactor * 0.8}rem)`,
-                              fontWeight: growFactor > 0.5 ? 600 : 400,
-                              maxWidth: "84%",
-                              lineHeight: 1.45,
-                              ...activeStyle.next(growFactor),
-                            }}
-                          >
-                            {nextLine.text}
-                          </motion.p>
-                        )}
-                      </AnimatePresence>
-
-                      {/* Current line — fixed slot at bottom, pure fade in/out */}
-                      <AnimatePresence mode="sync">
-                        <motion.p
+                        <motion.div
                           key={`cur-${currentLineIndex}`}
                           className="text-center"
-                          initial={{ opacity: 0, scale: 0.94 }}
+                          initial={{ opacity: 0, scale: 0.96 }}
                           animate={{ opacity: 1, scale: 1 }}
-                          exit={{ opacity: 0, scale: 1.02, transition: { duration: 0.15 } }}
+                          exit={{ opacity: 0, transition: { duration: 0.18 } }}
                           transition={{ type: "spring", stiffness: 340, damping: 30 }}
                           style={{
-                            fontSize: "clamp(1.22rem, 3.2vw, 2rem)",
-                            fontWeight: 700,
-                            letterSpacing: "0.015em",
-                            lineHeight: 1.35,
                             maxWidth: "90%",
-                            ...activeStyle.current,
+                            WebkitMaskImage: wipeMask,
+                            maskImage: wipeMask,
                           }}
                         >
-                          {currentLine?.text}
-                        </motion.p>
+                          <p
+                            style={{
+                              fontSize: "clamp(1.3rem, 3.4vw, 2.1rem)",
+                              fontWeight: 700,
+                              letterSpacing: "0.015em",
+                              lineHeight: 1.35,
+                              ...activeStyle.current,
+                            }}
+                          >
+                            {currentLine?.text}
+                          </p>
+                        </motion.div>
                       </AnimatePresence>
                     </div>
                   ) : (
