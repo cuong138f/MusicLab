@@ -266,6 +266,8 @@ export default function App() {
   const [lyricEffect, setLyricEffect] = useState<LyricEffectId>("wipe");
   const [editingLineIndex, setEditingLineIndex] = useState<number | null>(null);
   const [editingText, setEditingText] = useState("");
+  const [editingTimeIdx, setEditingTimeIdx] = useState<number | null>(null);
+  const [editingTimeVal, setEditingTimeVal] = useState("");
   const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
   const [lyricStyleId, setLyricStyleId] = useState<LyricStyleId>("purple");
@@ -480,6 +482,27 @@ export default function App() {
   };
 
   const cancelEditLine = () => setEditingLineIndex(null);
+
+  // ── Time editing: clicking a start-time badge makes it editable ──────────
+  const startEditTime = (i: number) => {
+    setEditingTimeIdx(i);
+    setEditingTimeVal(lyricsLines[i].start.toFixed(1));
+  };
+
+  const saveEditTime = () => {
+    if (editingTimeIdx === null) return;
+    const newStart = parseFloat(editingTimeVal);
+    if (!isNaN(newStart) && newStart >= 0) {
+      setLyricsLines((prev) =>
+        prev.map((l, i) => {
+          if (i === editingTimeIdx) return { ...l, start: newStart };
+          if (i === editingTimeIdx - 1) return { ...l, end: newStart }; // prev line shrinks/grows
+          return l;
+        })
+      );
+    }
+    setEditingTimeIdx(null);
+  };
 
   // Split a line into two halves at the nearest word boundary to the middle
   const splitLine = (i: number) => {
@@ -970,7 +993,31 @@ export default function App() {
                           : "text-white/50 hover:bg-white/[0.04]"
                       }`}
                     >
-                      <span className="font-mono text-violet-400/70 shrink-0 tabular-nums text-[10px]">{formatTime(line.start)}</span>
+                      {/* Editable start-time badge */}
+                      {editingTimeIdx === i ? (
+                        <input
+                          autoFocus
+                          type="number"
+                          step="0.1"
+                          min="0"
+                          value={editingTimeVal}
+                          onChange={(e) => setEditingTimeVal(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") saveEditTime();
+                            if (e.key === "Escape") setEditingTimeIdx(null);
+                          }}
+                          onBlur={saveEditTime}
+                          className="w-14 bg-white/[0.08] border border-amber-500/40 rounded px-1 py-0.5 text-amber-300 outline-none text-[10px] font-mono text-center shrink-0"
+                        />
+                      ) : (
+                        <button
+                          onClick={() => startEditTime(i)}
+                          className="font-mono text-violet-400/70 shrink-0 tabular-nums text-[10px] hover:text-amber-400 transition-colors cursor-text"
+                          title="Nhấn để chỉnh thời gian bắt đầu"
+                        >
+                          {formatTime(line.start)}
+                        </button>
+                      )}
 
                       {editingLineIndex === i ? (
                         /* ── Inline edit mode ── */
@@ -1021,7 +1068,7 @@ export default function App() {
                   ))}
                 </div>
                 <p className="text-[10px] text-white/20 mt-1.5 text-center">
-                  Hover vào dòng → nhấn ✏ để sửa lời · Enter để lưu · Esc để huỷ
+                  Nhấn timestamp để chỉnh giờ · ✏ sửa lời · ✂ cắt đôi · Enter lưu · Esc huỷ
                 </p>
               </section>
             )}
