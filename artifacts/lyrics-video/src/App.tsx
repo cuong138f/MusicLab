@@ -154,6 +154,7 @@ const LYRIC_EFFECTS = [
   { id: "fade",     label: "Mờ dần"        },
   { id: "blur",     label: "Nhòe dần"      },
   { id: "karaoke",  label: "Karaoke"       },
+  { id: "wave",     label: "Gạch sóng"    },
 ] as const;
 type LyricEffectId = (typeof LYRIC_EFFECTS)[number]["id"];
 
@@ -678,6 +679,31 @@ export default function App() {
           ctx.fillStyle = styleColors.fill;
           ctx.fillText(cLine.text, W / 2, textY);
           ctx.filter = "none";
+        } else if (effect === "wave") {
+          // Static text + animated wave underline draws L→R with lp
+          ctx.shadowColor = styleColors.glow; ctx.shadowBlur = 28;
+          ctx.fillStyle = styleColors.fill;
+          ctx.fillText(cLine.text, W / 2, textY);
+
+          // Draw wave underline clipped to lp portion
+          const wW = W * 0.72;
+          const wX0 = (W - wW) / 2;
+          const wY = textY + 18;
+          const amp = 9, cycles = 6;
+          ctx.save();
+          ctx.beginPath(); ctx.rect(0, 0, wX0 + wW * lp, H); ctx.clip();
+          ctx.beginPath();
+          ctx.moveTo(wX0, wY);
+          for (let x = 0; x <= wW; x += 1) {
+            const wy = wY + Math.sin((x / wW) * Math.PI * 2 * cycles) * amp;
+            ctx.lineTo(wX0 + x, wy);
+          }
+          ctx.strokeStyle = styleColors.fill;
+          ctx.shadowColor = styleColors.glow; ctx.shadowBlur = 14;
+          ctx.lineWidth = 3.5;
+          ctx.lineCap = "round";
+          ctx.stroke();
+          ctx.restore();
         } else {
           // wipe (default): clip remaining right portion, hold 1.5 s first
           ctx.save();
@@ -735,6 +761,7 @@ export default function App() {
   // Per-effect opacity target (goes into Framer Motion animate so it wins)
   const effectOpacity =
     lyricEffect === "fade" ? Math.max(0, 1 - wipeProgress)
+    : lyricEffect === "wave" ? 1
     : lyricEffect === "blur" ? Math.max(0, 1 - wipeProgress * 0.85)
     : 1;
 
@@ -1134,7 +1161,41 @@ export default function App() {
                             ...(effectFilter && { filter: effectFilter }),
                           }}
                         >
-                          {lyricEffect === "karaoke" ? (
+                          {lyricEffect === "wave" ? (
+                            /* Wave: static text + animated swoosh underline draws L→R */
+                            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "4px" }}>
+                              <p style={{
+                                fontSize: "clamp(1.3rem, 3.4vw, 2.1rem)",
+                                fontWeight: 700,
+                                letterSpacing: "0.015em",
+                                lineHeight: 1.35,
+                                textAlign: "center",
+                                ...activeStyle.current,
+                              }}>
+                                {currentLine?.text}
+                              </p>
+                              {/* SVG wave that draws left→right with lineProgress */}
+                              <svg
+                                viewBox="0 0 400 22"
+                                style={{ width: "88%", height: "22px", overflow: "visible", display: "block" }}
+                                preserveAspectRatio="none"
+                              >
+                                <motion.path
+                                  key={`wave-${currentLineIndex}`}
+                                  d="M 0 11 C 25 3, 50 19, 75 11 C 100 3, 125 19, 150 11 C 175 3, 200 19, 225 11 C 250 3, 275 19, 300 11 C 325 3, 350 19, 375 11 C 387 5, 395 14, 400 11"
+                                  fill="none"
+                                  stroke={activeStyle.dot}
+                                  strokeWidth="3.5"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  initial={{ pathLength: 0, opacity: 0 }}
+                                  animate={{ pathLength: lineProgress, opacity: lineProgress > 0.01 ? 1 : 0 }}
+                                  transition={{ duration: 0.04, ease: "linear" }}
+                                  style={{ filter: `drop-shadow(0 0 5px ${activeStyle.dot}) drop-shadow(0 0 10px ${activeStyle.dot}80)` }}
+                                />
+                              </svg>
+                            </div>
+                          ) : lyricEffect === "karaoke" ? (
                             /* Karaoke: dim base + bright clip that sweeps left → right */
                             <div style={{ position: "relative" }}>
                               {/* dim/unsung base */}
