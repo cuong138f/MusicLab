@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import WaveSurfer from "wavesurfer.js";
-import { Music, Image, Play, Pause, Wand2, SkipBack, Upload, Loader2, Sparkles } from "lucide-react";
+import { Music, Image, Play, Pause, Wand2, SkipBack, Upload, Loader2, Sparkles, Pencil, Check, X } from "lucide-react";
 
 interface LyricLine {
   text: string;
@@ -161,6 +161,8 @@ export default function App() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [transcribeError, setTranscribeError] = useState<string | null>(null);
+  const [editingLineIndex, setEditingLineIndex] = useState<number | null>(null);
+  const [editingText, setEditingText] = useState("");
 
   const waveformRef = useRef<HTMLDivElement>(null);
   const wavesurferRef = useRef<WaveSurfer | null>(null);
@@ -327,6 +329,23 @@ export default function App() {
       setIsTranscribing(false);
     }
   };
+
+  const startEditLine = (i: number) => {
+    setEditingLineIndex(i);
+    setEditingText(lyricsLines[i].text);
+  };
+
+  const saveEditLine = () => {
+    if (editingLineIndex === null) return;
+    const updated = lyricsLines.map((l, i) =>
+      i === editingLineIndex ? { ...l, text: editingText.trim() || l.text } : l
+    );
+    setLyricsLines(updated);
+    setLyricsText(updated.map((l) => l.text).join("\n"));
+    setEditingLineIndex(null);
+  };
+
+  const cancelEditLine = () => setEditingLineIndex(null);
 
   const handlePlayPause = () => wavesurferRef.current?.playPause();
   const handleRestart = () => {
@@ -519,24 +538,60 @@ export default function App() {
                 <p className="text-[10px] font-semibold tracking-[0.12em] uppercase text-white/40 mb-2">
                   Timeline — {lyricsLines.length} dòng
                 </p>
-                <div className="space-y-0.5 max-h-44 overflow-y-auto rounded-xl border border-white/[0.06] bg-white/[0.02] p-1">
+                <div className="space-y-0.5 max-h-52 overflow-y-auto rounded-xl border border-white/[0.06] bg-white/[0.02] p-1">
                   {lyricsLines.map((line, i) => (
                     <div
                       key={i}
-                      className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs transition-colors ${
+                      className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs transition-colors group ${
                         i === currentLineIndex
                           ? "bg-violet-500/15 text-white"
-                          : "text-white/40 hover:bg-white/[0.04]"
+                          : "text-white/50 hover:bg-white/[0.04]"
                       }`}
                     >
-                      <span className="font-mono text-violet-400/70 shrink-0 tabular-nums">{formatTime(line.start)}</span>
-                      <span className="truncate">{line.text}</span>
-                      <span className="font-mono text-white/20 shrink-0 ml-auto tabular-nums text-[10px]">
-                        {(line.end - line.start).toFixed(1)}s
-                      </span>
+                      <span className="font-mono text-violet-400/70 shrink-0 tabular-nums text-[10px]">{formatTime(line.start)}</span>
+
+                      {editingLineIndex === i ? (
+                        /* ── Inline edit mode ── */
+                        <>
+                          <input
+                            autoFocus
+                            value={editingText}
+                            onChange={(e) => setEditingText(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") saveEditLine();
+                              if (e.key === "Escape") cancelEditLine();
+                            }}
+                            className="flex-1 bg-white/[0.08] border border-violet-500/40 rounded px-2 py-0.5 text-white outline-none text-xs min-w-0"
+                          />
+                          <button onClick={saveEditLine} className="shrink-0 text-emerald-400 hover:text-emerald-300 transition-colors">
+                            <Check className="w-3.5 h-3.5" />
+                          </button>
+                          <button onClick={cancelEditLine} className="shrink-0 text-white/30 hover:text-white/60 transition-colors">
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </>
+                      ) : (
+                        /* ── Display mode ── */
+                        <>
+                          <span className="flex-1 truncate">{line.text}</span>
+                          <button
+                            onClick={() => startEditLine(i)}
+                            className="shrink-0 opacity-0 group-hover:opacity-100 text-white/30 hover:text-violet-400 transition-all"
+                            title="Sửa lời"
+                          >
+                            <Pencil className="w-3 h-3" />
+                          </button>
+                          <span className="font-mono text-white/20 shrink-0 tabular-nums text-[10px]">
+                            {(line.end - line.start).toFixed(1)}s
+                          </span>
+                        </>
+                      )}
                     </div>
                   ))}
                 </div>
+                <p className="text-[10px] text-white/20 mt-1.5 text-center">
+                  Hover vào dòng → nhấn ✏ để sửa lời · Enter để lưu · Esc để huỷ
+                </p>
               </section>
             )}
           </div>
