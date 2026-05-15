@@ -1,5 +1,9 @@
 import { Router } from "express";
 import { GoogleGenAI } from "@google/genai";
+import { writeFile, unlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { randomUUID } from "node:crypto";
 
 const router = Router();
 
@@ -30,6 +34,9 @@ Example (notice the gap between lines is NOT part of either line's duration):
 In that example the first line ends at 8.1 s even though the next line doesn't start until 11.0 s.
 `.trim();
 
+// Gemini inline data limit: ~4 MB for audio (files longer than ~2m20s must use File API)
+const INLINE_LIMIT_BYTES = 4 * 1024 * 1024;
+
 router.post("/transcribe-audio", async (req, res) => {
   const { audioBase64, mimeType } = req.body as {
     audioBase64?: string;
@@ -47,81 +54,126 @@ router.post("/transcribe-audio", async (req, res) => {
     return;
   }
 
+  const ai = new GoogleGenAI({ apiKey });
+  const audioBuffer = Buffer.from(audioBase64, "base64");
+
+  let lines: { text: string; start: number; end: number }[];
+
   try {
-    const ai = new GoogleGenAI({ apiKey });
+    if (audioBuffer.byteLength <= INLINE_LIMIT_BYTES) {
+      // ── Small file: send as inline base64 ───────────────────────────
+      req.log.info({ bytes: audioBuffer.byteLength }, "Transcribing via inline data");
 
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: [
-        {
-          parts: [
-            {
-              inlineData: {
-                mimeType,
-                data: audioBase64,
-              },
-            },
-            { text: PROMPT },
-          ],
-        },
-      ],
-    });
-
-    const rawText = response.text?.trim() ?? "";
-
-    // Strip any markdown code blocks if model wraps the JSON
-    const jsonText = rawText
-      .replace(/^```(?:json)?\s*/i, "")
-      .replace(/\s*```$/, "")
-      .trim();
-
-    let lines: { text: string; start: number; end: number }[];
-    try {
-      lines = JSON.parse(jsonText);
-      if (!Array.isArray(lines)) throw new Error("Not an array");
-    } catch {
-      req.log.warn({ rawText }, "Gemini response was not valid JSON");
-      res.status(502).json({
-        error: "AI returned an unexpected format",
-        raw: rawText.slice(0, 500),
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: [
+          {
+            parts: [
+              { inlineData: { mimeType, data: audioBase64 } },
+              { text: PROMPT },
+            ],
+          },
+        ],
       });
-      return;
-    }
 
-    // Sort by start time (defensive)
-    lines.sort((a, b) => a.start - b.start);
+      lines = parseGeminiResponse(response.text?.trim() ?? "");
+    } else {
+      // ── Large file: upload via File API, reference by URI ────────────
+      const ext = mimeType.split("/")[1]?.replace("mpeg", "mp3") ?? "mp3";
+      const tmpPath = join(tmpdir(), `lv_audio_${randomUUID()}.${ext}`);
 
-    // Sanity-cap each line's duration:
-    // If a line is suspiciously long AND the next line starts just before its end,
-    // Gemini likely extended the end through a musical gap — trim it.
-    const MAX_NATURAL_DURATION = 10; // seconds; >10 s is almost never a single sung line
-    const CHARS_PER_SECOND = 7;      // rough sung speech rate for estimating cap
-
-    lines = lines.map((line, i) => {
-      const duration = line.end - line.start;
-      if (duration <= MAX_NATURAL_DURATION) return line;
-
-      // Estimate how long the line should actually be based on text length
-      const estimated = Math.max(2.0, Math.min(8.0, line.text.length / CHARS_PER_SECOND));
-
-      // Also cap at the gap before the next line starts (if it starts soon)
-      const nextStart = lines[i + 1]?.start ?? Infinity;
-      const gapBased = nextStart - line.start;
-
-      const cappedEnd = line.start + Math.min(estimated, gapBased > 0 ? Math.min(gapBased, estimated) : estimated);
-
-      req.log.warn(
-        { line: line.text, originalEnd: line.end, cappedEnd },
-        "Capped suspiciously long lyric line duration"
+      req.log.info(
+        { bytes: audioBuffer.byteLength, tmpPath },
+        "Transcribing via Gemini File API — uploading"
       );
-      return { ...line, end: Math.round(cappedEnd * 10) / 10 };
-    });
 
-    res.json({ lines });
+      await writeFile(tmpPath, audioBuffer);
+
+      let uploadedFile: { name: string; uri: string; state?: string };
+      try {
+        uploadedFile = await ai.files.upload({
+          file: tmpPath,
+          config: { mimeType, displayName: "lyrics-video-audio" },
+        }) as { name: string; uri: string; state?: string };
+      } finally {
+        await unlink(tmpPath).catch(() => {});
+      }
+
+      // Poll until ACTIVE (usually instant for audio < 200 MB)
+      let fileInfo = await ai.files.get({ name: uploadedFile.name }) as { name: string; uri: string; state?: string };
+      let polls = 0;
+      while (fileInfo.state === "PROCESSING" && polls < 30) {
+        await new Promise((r) => setTimeout(r, 3000));
+        fileInfo = await ai.files.get({ name: uploadedFile.name }) as { name: string; uri: string; state?: string };
+        polls++;
+      }
+
+      if (fileInfo.state !== "ACTIVE") {
+        await ai.files.delete({ name: fileInfo.name }).catch(() => {});
+        res.status(502).json({ error: "File upload to AI timed out or failed" });
+        return;
+      }
+
+      req.log.info({ uri: fileInfo.uri }, "File ACTIVE — generating content");
+
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: [
+          {
+            parts: [
+              { fileData: { fileUri: fileInfo.uri, mimeType } },
+              { text: PROMPT },
+            ],
+          },
+        ],
+      });
+
+      // Clean up uploaded file (best-effort)
+      ai.files.delete({ name: fileInfo.name }).catch(() => {});
+
+      lines = parseGeminiResponse(response.text?.trim() ?? "");
+    }
   } catch (err) {
     req.log.error({ err }, "Gemini transcription failed");
     res.status(500).json({ error: "Transcription failed" });
+    return;
   }
+
+  // Sort by start time (defensive)
+  lines.sort((a, b) => a.start - b.start);
+
+  // Sanity-cap each line's duration
+  const MAX_NATURAL_DURATION = 10;
+  const CHARS_PER_SECOND = 7;
+
+  lines = lines.map((line, i) => {
+    const duration = line.end - line.start;
+    if (duration <= MAX_NATURAL_DURATION) return line;
+
+    const estimated = Math.max(2.0, Math.min(8.0, line.text.length / CHARS_PER_SECOND));
+    const nextStart = lines[i + 1]?.start ?? Infinity;
+    const gapBased = nextStart - line.start;
+    const cappedEnd = line.start + Math.min(estimated, gapBased > 0 ? Math.min(gapBased, estimated) : estimated);
+
+    req.log.warn(
+      { line: line.text, originalEnd: line.end, cappedEnd },
+      "Capped suspiciously long lyric line duration"
+    );
+    return { ...line, end: Math.round(cappedEnd * 10) / 10 };
+  });
+
+  res.json({ lines });
 });
+
+function parseGeminiResponse(rawText: string): { text: string; start: number; end: number }[] {
+  const jsonText = rawText
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/, "")
+    .trim();
+
+  const parsed = JSON.parse(jsonText);
+  if (!Array.isArray(parsed)) throw new Error("Not an array");
+  return parsed as { text: string; start: number; end: number }[];
+}
 
 export default router;
