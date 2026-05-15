@@ -361,8 +361,12 @@ export default function App() {
   const [coverImage, setCoverImage] = useState<string | null>(null);
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  const [lyricsText, setLyricsText] = useState("");
-  const [lyricsLines, setLyricsLines] = useState<LyricLine[]>([]);
+  const [lyricsText, setLyricsText] = useState<string>(() => {
+    try { return JSON.parse(localStorage.getItem("lv_lyricsText") ?? '""') as string; } catch { return ""; }
+  });
+  const [lyricsLines, setLyricsLines] = useState<LyricLine[]>(() => {
+    try { return JSON.parse(localStorage.getItem("lv_lyricsLines") ?? "[]") as LyricLine[]; } catch { return []; }
+  });
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -372,7 +376,10 @@ export default function App() {
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [transcribeError, setTranscribeError] = useState<string | null>(null);
   const [transcribeFromCache, setTranscribeFromCache] = useState(false);
-  const [lyricEffect, setLyricEffect] = useState<LyricEffectId>("wipe");
+  const [lyricEffect, setLyricEffect] = useState<LyricEffectId>(() => {
+    const saved = localStorage.getItem("lv_lyricEffect");
+    return (saved && ["fade", "slide", "pop", "wipe", "karaoke", "wave"].includes(saved) ? saved : "wipe") as LyricEffectId;
+  });
   const [editingLineIndex, setEditingLineIndex] = useState<number | null>(null);
   const [editingText, setEditingText] = useState("");
   const [editingTimeIdx, setEditingTimeIdx] = useState<number | null>(null);
@@ -384,8 +391,14 @@ export default function App() {
   const [isExporting, setIsExporting] = useState(false);
   const [exportingFormat, setExportingFormat] = useState<"webm" | "mp4">("webm");
   const [exportProgress, setExportProgress] = useState(0);
-  const [lyricStyleId, setLyricStyleId] = useState<LyricStyleId>("purple");
-  const [lyricFontSize, setLyricFontSize] = useState(100);
+  const [lyricStyleId, setLyricStyleId] = useState<LyricStyleId>(() => {
+    const saved = localStorage.getItem("lv_lyricStyleId");
+    return (saved && ["purple", "gold", "cyan", "rose", "green", "white"].includes(saved) ? saved : "purple") as LyricStyleId;
+  });
+  const [lyricFontSize, setLyricFontSize] = useState<number>(() => {
+    const saved = parseInt(localStorage.getItem("lv_lyricFontSize") ?? "", 10);
+    return isNaN(saved) ? 100 : Math.min(180, Math.max(60, saved));
+  });
 
   const waveformRef = useRef<HTMLDivElement>(null);
   const wavesurferRef = useRef<WaveSurfer | null>(null);
@@ -455,6 +468,13 @@ export default function App() {
     const el = lyricsViewRef.current.querySelector<HTMLElement>(`[data-line="${currentLineIndex}"]`);
     el?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [currentLineIndex]);
+
+  // ── Auto-save session to localStorage ────────────────────────────────
+  useEffect(() => { localStorage.setItem("lv_lyricsText", JSON.stringify(lyricsText)); }, [lyricsText]);
+  useEffect(() => { localStorage.setItem("lv_lyricsLines", JSON.stringify(lyricsLines)); }, [lyricsLines]);
+  useEffect(() => { localStorage.setItem("lv_lyricEffect", lyricEffect); }, [lyricEffect]);
+  useEffect(() => { localStorage.setItem("lv_lyricStyleId", lyricStyleId); }, [lyricStyleId]);
+  useEffect(() => { localStorage.setItem("lv_lyricFontSize", String(lyricFontSize)); }, [lyricFontSize]);
 
   const handleCoverUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1373,7 +1393,7 @@ export default function App() {
         </aside>
 
         {/* ── RIGHT PANEL ────────────────────────────────────── */}
-        <main className="flex-1 flex flex-col items-center justify-center gap-5 p-8 overflow-y-auto">
+        <main className="flex-1 flex flex-col items-center gap-5 px-8 py-6 overflow-y-auto">
 
           {/* 16:9 Video Preview */}
           <div className="w-full max-w-[800px]">
