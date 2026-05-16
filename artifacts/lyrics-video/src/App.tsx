@@ -528,6 +528,10 @@ export default function App() {
   const [coverImage, setCoverImage] = useState<string | null>(null);
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [songTitle, setSongTitle] = useState<string>(() => {
+    try { return localStorage.getItem("lv_songTitle") ?? ""; } catch { return ""; }
+  });
+  const [editingTitle, setEditingTitle] = useState(false);
   const [lyricsText, setLyricsText] = useState<string>(() => {
     try { return JSON.parse(localStorage.getItem("lv_lyricsText") ?? '""') as string; } catch { return ""; }
   });
@@ -687,6 +691,9 @@ export default function App() {
     setAudioFile(file);
     setAudioUrl(URL.createObjectURL(file));
     setLyricsLines([]);
+    const derived = file.name.replace(/\.[^/.]+$/, "");
+    setSongTitle(derived);
+    try { localStorage.setItem("lv_songTitle", derived); } catch { /* ignore */ }
   };
 
   const handleAutoTimeline = async () => {
@@ -1477,20 +1484,54 @@ export default function App() {
           </div>
         </label>
 
-        {/* Audio upload — compact */}
-        <label className="cursor-pointer group shrink-0">
-          <input type="file" accept="audio/*" className="sr-only" onChange={handleAudioUpload} />
-          <div className={`h-[38px] px-2.5 rounded-lg border transition-all flex items-center gap-1.5 ${
-            audioFile
-              ? "border-violet-500/30 bg-violet-500/[0.06]"
-              : "border-white/[0.08] bg-white/[0.03] group-hover:border-violet-500/30 group-hover:bg-violet-500/[0.04]"
-          }`}>
-            <Music className={`w-3.5 h-3.5 shrink-0 ${audioFile ? "text-violet-400" : "text-white/25 group-hover:text-violet-400 transition-colors"}`} />
-            <span className={`text-xs font-medium truncate max-w-[90px] leading-tight ${audioFile ? "text-white/70" : "text-white/30 group-hover:text-white/50 transition-colors"}`}>
-              {audioFile ? audioFile.name.replace(/\.[^/.]+$/, "") : "Upload nhạc"}
-            </span>
-          </div>
-        </label>
+        {/* Audio upload + editable title */}
+        <div className="flex items-center gap-0 shrink-0">
+          <label className="cursor-pointer group">
+            <input type="file" accept="audio/*" className="sr-only" onChange={handleAudioUpload} />
+            <div className={`h-[38px] px-2.5 rounded-l-lg border-y border-l transition-all flex items-center ${
+              audioFile
+                ? "border-violet-500/30 bg-violet-500/[0.06]"
+                : "border-white/[0.08] bg-white/[0.03] group-hover:border-violet-500/30 group-hover:bg-violet-500/[0.04]"
+            }`}>
+              <Music className={`w-3.5 h-3.5 shrink-0 ${audioFile ? "text-violet-400" : "text-white/25 group-hover:text-violet-400 transition-colors"}`} />
+            </div>
+          </label>
+          {audioFile ? (
+            editingTitle ? (
+              <input
+                autoFocus
+                value={songTitle}
+                onChange={(e) => setSongTitle(e.target.value)}
+                onBlur={() => {
+                  setEditingTitle(false);
+                  try { localStorage.setItem("lv_songTitle", songTitle); } catch { /* ignore */ }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === "Escape") {
+                    setEditingTitle(false);
+                    try { localStorage.setItem("lv_songTitle", songTitle); } catch { /* ignore */ }
+                  }
+                }}
+                className="h-[38px] px-2 text-xs font-medium text-white/90 bg-violet-500/[0.06] border-y border-r border-violet-500/50 rounded-r-lg outline-none w-[120px] truncate"
+              />
+            ) : (
+              <button
+                title="Nhấn để sửa tên bài"
+                onClick={() => setEditingTitle(true)}
+                className="h-[38px] px-2.5 text-xs font-medium text-white/70 bg-violet-500/[0.06] border-y border-r border-violet-500/30 rounded-r-lg hover:text-white/90 hover:border-violet-500/50 transition-all max-w-[120px] truncate"
+              >
+                {songTitle || audioFile.name.replace(/\.[^/.]+$/, "")}
+              </button>
+            )
+          ) : (
+            <label className="cursor-pointer group">
+              <input type="file" accept="audio/*" className="sr-only" onChange={handleAudioUpload} />
+              <div className="h-[38px] px-2.5 rounded-r-lg border-y border-r border-white/[0.08] bg-white/[0.03] group-hover:border-violet-500/30 group-hover:bg-violet-500/[0.04] transition-all flex items-center">
+                <span className="text-xs font-medium text-white/30 group-hover:text-white/50 transition-colors">Upload nhạc</span>
+              </div>
+            </label>
+          )}
+        </div>
 
         <div className="h-5 w-px bg-white/[0.08] shrink-0 mx-0.5" />
 
