@@ -576,6 +576,7 @@ export default function App() {
   const [splitParts, setSplitParts] = useState<1 | 2 | 3>(1);
   const [splitCutInputs, setSplitCutInputs] = useState<string[]>([]);
   const [splitProgress, setSplitProgress] = useState<{ current: number; total: number } | null>(null);
+  const [gapShiftInputs, setGapShiftInputs] = useState<Record<number, string>>({});
   const [customPrompt, setCustomPrompt] = useState<string>(() =>
     localStorage.getItem("lv_customPrompt") ?? DEFAULT_PROMPT
   );
@@ -851,14 +852,21 @@ export default function App() {
   const getAudioCacheKey = (file: File) =>
     `lvg_transcribe_${file.name}_${file.size}_${file.lastModified}`;
 
-  // Clamp all timestamps so nothing exceeds the actual audio duration.
-  const clampLines = (lines: LyricLine[]): LyricLine[] => {
-    if (!duration) return lines;
-    return lines.map((l) => ({
-      ...l,
-      start: Math.min(l.start, duration),
-      end:   Math.min(l.end,   duration),
-    }));
+  // No clamping — timestamps may exceed audio duration (user can extend timeline freely).
+  const clampLines = (lines: LyricLine[]): LyricLine[] => lines;
+
+  /** Shift all lines from fromIdx onwards backwards by subtractSecs seconds */
+  const shiftLinesFrom = (fromIdx: number, subtractSecs: number) => {
+    setLyricsLines((prev) =>
+      prev.map((line, idx) => {
+        if (idx < fromIdx) return line;
+        return {
+          ...line,
+          start: Math.max(0, +((line.start - subtractSecs).toFixed(1))),
+          end:   Math.max(0, +((line.end   - subtractSecs).toFixed(1))),
+        };
+      })
+    );
   };
 
   const applyTranscribeResult = (
@@ -2002,9 +2010,32 @@ export default function App() {
                       {gapSecs > 20 && (
                         <div className="flex items-center gap-1.5 px-2 py-1">
                           <div className="flex-1 h-px bg-amber-500/25" />
-                          <span className="text-[9px] font-semibold text-amber-400/70 px-1 shrink-0 flex items-center gap-1">
-                            ⚠ Khoảng trống {gapSecs.toFixed(0)}s — có thể thiếu lời
+                          <span className="text-[9px] font-semibold text-amber-400/70 shrink-0 flex items-center gap-1">
+                            ⚠ {gapSecs.toFixed(0)}s
                           </span>
+                          <span className="text-[9px] text-white/20 shrink-0">trừ</span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={gapShiftInputs[i] ?? gapSecs.toFixed(0)}
+                            onChange={(e) =>
+                              setGapShiftInputs((prev) => ({ ...prev, [i]: e.target.value }))
+                            }
+                            className="w-11 bg-white/[0.05] border border-amber-500/20 focus:border-amber-400/40 rounded px-1 py-0.5 text-[9px] text-amber-300/80 font-mono text-center outline-none"
+                            title="Số giây cần trừ khỏi tất cả dòng từ đây về sau"
+                          />
+                          <span className="text-[9px] text-white/20 shrink-0">s từ đây</span>
+                          <button
+                            onClick={() => {
+                              const secs = parseFloat(gapShiftInputs[i] ?? gapSecs.toFixed(0));
+                              if (!isNaN(secs) && secs > 0) shiftLinesFrom(i, secs);
+                            }}
+                            className="text-[9px] font-semibold text-amber-400/80 hover:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 rounded px-1.5 py-0.5 transition-all shrink-0"
+                            title="Dịch lùi tất cả dòng từ đây về sau"
+                          >
+                            Dịch lùi
+                          </button>
                           <div className="flex-1 h-px bg-amber-500/25" />
                         </div>
                       )}
