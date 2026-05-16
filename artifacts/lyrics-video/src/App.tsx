@@ -2137,9 +2137,7 @@ export default function App() {
                                   const d = parseFloat(editingDurVal);
                                   if (!isNaN(d) && d > 0) {
                                     setLyricsLines((prev) => prev.map((l, idx) =>
-                                      idx === i ? { ...l, end: l.start + d }
-                                      : idx === i + 1 ? { ...l, start: lyricsLines[i].start + d }
-                                      : l
+                                      idx === i ? { ...l, end: l.start + d } : l
                                     ));
                                   }
                                   setEditingDurIdx(null);
@@ -2150,9 +2148,7 @@ export default function App() {
                                 const d = parseFloat(editingDurVal);
                                 if (!isNaN(d) && d > 0) {
                                   setLyricsLines((prev) => prev.map((l, idx) =>
-                                    idx === i ? { ...l, end: l.start + d }
-                                    : idx === i + 1 ? { ...l, start: lyricsLines[i].start + d }
-                                    : l
+                                    idx === i ? { ...l, end: l.start + d } : l
                                   ));
                                 }
                                 setEditingDurIdx(null);
