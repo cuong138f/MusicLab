@@ -164,9 +164,10 @@ function drawLyricFrame(
 
   // ── Background ──────────────────────────────────────────────
   if (coverImg) {
+    const bgPad = Math.round(60 * H / 720);
     ctx.save();
-    ctx.filter = "blur(22px) brightness(0.3) saturate(1.5)";
-    ctx.drawImage(coverImg, -60, -60, W + 120, H + 120);
+    ctx.filter = `blur(${Math.round(22 * H / 720)}px) brightness(0.3) saturate(1.5)`;
+    ctx.drawImage(coverImg, -bgPad, -bgPad, W + bgPad * 2, H + bgPad * 2);
     ctx.filter = "none";
     ctx.restore();
     const sc = Math.min(W / coverImg.naturalWidth, H / coverImg.naturalHeight);
@@ -201,8 +202,11 @@ function drawLyricFrame(
     ? Math.max(0, Math.min(1, (lineElapsed - WIPE_HOLD) / (lineDur - WIPE_HOLD)))
     : lp;
 
-  const baseFontPx = Math.round(54 * fontSizePct / 100);
-  const textY = H - 40;
+  // Scale factor — keeps all pixel values proportional across 480p/720p/1080p
+  const S = H / 720;
+  const baseFontPx = Math.round(54 * S * fontSizePct / 100);
+  const textY = H - Math.round(40 * S);
+  const shadowBlur = Math.round(28 * S);
   ctx.save();
   ctx.font = `bold ${baseFontPx}px Inter, system-ui, sans-serif`;
   ctx.textAlign = "center";
@@ -215,29 +219,29 @@ function drawLyricFrame(
     ctx.globalAlpha = 1;
     ctx.save();
     ctx.beginPath(); ctx.rect(0, 0, lp * W, H); ctx.clip();
-    ctx.shadowColor = styleColors.glow; ctx.shadowBlur = 30;
+    ctx.shadowColor = styleColors.glow; ctx.shadowBlur = Math.round(30 * S);
     ctx.fillStyle = styleColors.fill;
     ctx.fillText(cLine.text, W / 2, textY);
     ctx.restore();
   } else if (effect === "fade") {
     ctx.globalAlpha = Math.max(0, 1 - wp * ep.fadeSpeed);
-    ctx.shadowColor = styleColors.glow; ctx.shadowBlur = 28;
+    ctx.shadowColor = styleColors.glow; ctx.shadowBlur = shadowBlur;
     ctx.fillStyle = styleColors.fill;
     ctx.fillText(cLine.text, W / 2, textY);
   } else if (effect === "blur") {
-    const blurPx = (wp * ep.blurAmount).toFixed(1);
+    const blurPx = (wp * ep.blurAmount * S).toFixed(1);
     ctx.filter = `blur(${blurPx}px)`;
     ctx.globalAlpha = Math.max(0, 1 - wp * 0.85);
-    ctx.shadowColor = styleColors.glow; ctx.shadowBlur = 28;
+    ctx.shadowColor = styleColors.glow; ctx.shadowBlur = shadowBlur;
     ctx.fillStyle = styleColors.fill;
     ctx.fillText(cLine.text, W / 2, textY);
     ctx.filter = "none";
   } else if (effect === "wave") {
-    ctx.shadowColor = styleColors.glow; ctx.shadowBlur = 28;
+    ctx.shadowColor = styleColors.glow; ctx.shadowBlur = shadowBlur;
     ctx.fillStyle = styleColors.fill;
     ctx.fillText(cLine.text, W / 2, textY);
     const wW = W * 0.72, wX0 = (W - W * 0.72) / 2;
-    const wY = textY + 18, amp = ep.waveAmp, cycles = ep.waveCycles;
+    const wY = textY + Math.round(18 * S), amp = ep.waveAmp * S, cycles = ep.waveCycles;
     ctx.save();
     ctx.beginPath(); ctx.rect(0, 0, wX0 + wW * lp, H); ctx.clip();
     ctx.beginPath();
@@ -245,14 +249,14 @@ function drawLyricFrame(
     for (let x = 0; x <= wW; x++) {
       ctx.lineTo(wX0 + x, wY + Math.sin((x / wW) * Math.PI * 2 * cycles) * amp);
     }
-    ctx.strokeStyle = styleColors.fill; ctx.shadowColor = styleColors.glow; ctx.shadowBlur = 14;
-    ctx.lineWidth = 3.5; ctx.lineCap = "round"; ctx.stroke();
+    ctx.strokeStyle = styleColors.fill; ctx.shadowColor = styleColors.glow; ctx.shadowBlur = Math.round(14 * S);
+    ctx.lineWidth = Math.max(1.5, 3.5 * S); ctx.lineCap = "round"; ctx.stroke();
     ctx.restore();
   } else {
     // wipe: clip right portion, hold 1.5 s first
     ctx.save();
     ctx.beginPath(); ctx.rect(wp * W, 0, W * (1 - wp), H); ctx.clip();
-    ctx.shadowColor = styleColors.glow; ctx.shadowBlur = 28;
+    ctx.shadowColor = styleColors.glow; ctx.shadowBlur = shadowBlur;
     ctx.fillStyle = styleColors.fill;
     ctx.fillText(cLine.text, W / 2, textY);
     ctx.restore();
