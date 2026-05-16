@@ -2102,25 +2102,9 @@ export default function App() {
 
           {/* ── STYLE BAR ─────────────────────────────────────── */}
           <div className="px-6 pb-4 shrink-0">
-            <div className="max-w-[900px] mx-auto bg-white/[0.03] border border-white/[0.06] rounded-2xl px-5 py-3 flex items-center gap-4 flex-wrap">
+            <div className="max-w-[900px] mx-auto bg-white/[0.03] border border-white/[0.06] rounded-2xl px-5 py-3 flex items-center gap-x-4 gap-y-2.5 flex-wrap">
 
-              {/* Pre-roll — always first */}
-              <div className="flex items-center gap-2">
-                <p className="text-[9px] font-semibold uppercase tracking-widest text-white/30 shrink-0">Hiện trước</p>
-                <input
-                  type="range" min={0} max={3} step={0.1} value={prerollSeconds}
-                  onChange={(e) => setPrerollSeconds(Number(e.target.value))}
-                  className="w-20 h-1.5 rounded-full appearance-none cursor-pointer"
-                  style={{ accentColor: "#F59E0B" }}
-                />
-                <span className="text-[9px] font-mono text-amber-400/70 w-8 shrink-0">
-                  {prerollSeconds === 0 ? "tắt" : `${prerollSeconds.toFixed(1)}s`}
-                </span>
-              </div>
-
-              <div className="h-5 w-px bg-white/[0.06] shrink-0" />
-
-              {/* Colors */}
+              {/* ── ROW 1: Colors | Effects ── */}
               <div className="flex items-center gap-2.5">
                 <p className="text-[9px] font-semibold uppercase tracking-widest text-white/30 shrink-0">Màu</p>
                 <div className="flex flex-wrap gap-1">
@@ -2162,6 +2146,25 @@ export default function App() {
                     </button>
                   ))}
                 </div>
+              </div>
+
+              {/* Force line break before row 2 */}
+              <div className="basis-full h-0" />
+
+              {/* ── ROW 2: Pre-roll | Effect params | Font size ── */}
+
+              {/* Pre-roll */}
+              <div className="flex items-center gap-2">
+                <p className="text-[9px] font-semibold uppercase tracking-widest text-white/30 shrink-0">Hiện trước</p>
+                <input
+                  type="range" min={0} max={3} step={0.1} value={prerollSeconds}
+                  onChange={(e) => setPrerollSeconds(Number(e.target.value))}
+                  className="w-20 h-1.5 rounded-full appearance-none cursor-pointer"
+                  style={{ accentColor: "#F59E0B" }}
+                />
+                <span className="text-[9px] font-mono text-amber-400/70 w-8 shrink-0">
+                  {prerollSeconds === 0 ? "tắt" : `${prerollSeconds.toFixed(1)}s`}
+                </span>
               </div>
 
               {/* Effect-specific params */}
