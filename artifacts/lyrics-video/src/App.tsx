@@ -10,6 +10,14 @@ interface LyricLine {
   isMarker?: boolean;
 }
 
+interface SaveEntry {
+  id: string;
+  label: string;
+  ts: number;
+  lines: LyricLine[];
+  text: string;
+}
+
 function formatTime(s: number) {
   const m = Math.floor(s / 60);
   const sec = Math.floor(s % 60);
@@ -579,6 +587,12 @@ export default function App() {
   const [gapShiftInputs, setGapShiftInputs] = useState<Record<number, string>>({});
   const [shiftFromIdx, setShiftFromIdx] = useState<number | null>(null);
   const [shiftFromInput, setShiftFromInput] = useState("");
+  const [saves, setSaves] = useState<SaveEntry[]>(() => {
+    try { return JSON.parse(localStorage.getItem("lv_saves") ?? "[]") as SaveEntry[]; } catch { return []; }
+  });
+  const [showSaves, setShowSaves] = useState(false);
+  const [editingSaveId, setEditingSaveId] = useState<string | null>(null);
+  const [editingSaveLabel, setEditingSaveLabel] = useState("");
   const [customPrompt, setCustomPrompt] = useState<string>(() =>
     localStorage.getItem("lv_customPrompt") ?? DEFAULT_PROMPT
   );
@@ -1156,6 +1170,51 @@ export default function App() {
     ice:    { fill: "#7DF9FF", glow: "rgba(100,240,255,0.90)" },
     rose:   { fill: "#FF80B5", glow: "rgba(255,80,150,0.90)" },
     green:  { fill: "#69FF47", glow: "rgba(80,255,50,0.90)"  },
+  };
+
+  const persistSaves = (next: SaveEntry[]) => {
+    try { localStorage.setItem("lv_saves", JSON.stringify(next)); } catch { /* quota */ }
+  };
+
+  const handleSaveSnapshot = () => {
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const label = `${pad(now.getHours())}:${pad(now.getMinutes())} ${pad(now.getDate())}/${pad(now.getMonth() + 1)}`;
+    const entry: SaveEntry = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      label,
+      ts: Date.now(),
+      lines: JSON.parse(JSON.stringify(lyricsLines)) as LyricLine[],
+      text: lyricsText,
+    };
+    setSaves((prev) => {
+      const next = [entry, ...prev].slice(0, 30);
+      persistSaves(next);
+      return next;
+    });
+    setShowSaves(true);
+  };
+
+  const handleRestoreSave = (entry: SaveEntry) => {
+    setLyricsLines(entry.lines);
+    setLyricsText(entry.text);
+  };
+
+  const handleDeleteSave = (id: string) => {
+    setSaves((prev) => {
+      const next = prev.filter((s) => s.id !== id);
+      persistSaves(next);
+      return next;
+    });
+  };
+
+  const handleRenameSave = (id: string, newLabel: string) => {
+    setSaves((prev) => {
+      const next = prev.map((s) => s.id === id ? { ...s, label: newLabel } : s);
+      persistSaves(next);
+      return next;
+    });
+    setEditingSaveId(null);
   };
 
   const handleExportTimeline = () => {
@@ -1975,13 +2034,32 @@ export default function App() {
                     Timeline — {lyricsLines.filter(l => !l.isMarker).length} dòng
                   </p>
                   <div className="flex items-center gap-1">
+                    {/* Save snapshot */}
+                    <button
+                      onClick={handleSaveSnapshot}
+                      className="flex items-center gap-1 text-[10px] text-white/30 hover:text-amber-400 transition-colors px-2 py-1 rounded-lg hover:bg-white/[0.04]"
+                      title="Lưu bản snapshot hiện tại để khôi phục sau"
+                    >
+                      <span className="text-[11px] leading-none">💾</span>
+                      <span>Lưu</span>
+                    </button>
+                    {/* Show saves list */}
+                    {saves.length > 0 && (
+                      <button
+                        onClick={() => setShowSaves((v) => !v)}
+                        className={`flex items-center gap-1 text-[10px] transition-colors px-2 py-1 rounded-lg hover:bg-white/[0.04] ${showSaves ? "text-amber-400" : "text-white/30 hover:text-amber-400"}`}
+                        title="Xem danh sách bản lưu"
+                      >
+                        <span className="text-[11px] leading-none">🗂</span>
+                        <span>{saves.length}</span>
+                      </button>
+                    )}
                     {/* Import */}
                     <label
                       className="flex items-center gap-1 text-[10px] text-white/30 hover:text-violet-400 transition-colors cursor-pointer px-2 py-1 rounded-lg hover:bg-white/[0.04]"
                       title="Import timeline từ file .txt"
                     >
                       <Upload className="w-3 h-3" />
-                      <span>Import</span>
                       <input
                         type="file"
                         accept=".txt,text/plain"
@@ -1996,7 +2074,6 @@ export default function App() {
                       title="Export timeline ra file .txt để sửa tay"
                     >
                       <Download className="w-3 h-3" />
-                      <span>Export</span>
                     </button>
                   </div>
                 </div>
@@ -2268,6 +2345,57 @@ export default function App() {
                   <span className="text-emerald-400/50">giây</span> ·{" "}
                   <span className="text-teal-400/50">end</span> nhấn để sửa · ✏ lời · ✂ cắt · <span className="text-blue-400/50">⇕ dời từ đây</span> · 🗑 xoá
                 </p>
+              </div>
+            )}
+
+            {/* ── Saves panel ── */}
+            {showSaves && saves.length > 0 && (
+              <div className="flex flex-col gap-1 shrink-0">
+                <p className="text-[10px] font-semibold tracking-[0.12em] uppercase text-amber-400/50">
+                  Bản lưu ({saves.length})
+                </p>
+                <div className="space-y-0.5 max-h-48 overflow-y-auto rounded-xl border border-amber-500/15 bg-amber-500/[0.03] p-1">
+                  {saves.map((save) => (
+                    <div key={save.id} className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg hover:bg-white/[0.04] group text-[10px]">
+                      {editingSaveId === save.id ? (
+                        <input
+                          autoFocus
+                          value={editingSaveLabel}
+                          onChange={(e) => setEditingSaveLabel(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleRenameSave(save.id, editingSaveLabel || save.label);
+                            if (e.key === "Escape") setEditingSaveId(null);
+                          }}
+                          onBlur={() => handleRenameSave(save.id, editingSaveLabel || save.label)}
+                          className="flex-1 bg-white/[0.08] border border-amber-500/30 rounded px-1.5 py-0.5 text-amber-200/80 outline-none min-w-0"
+                        />
+                      ) : (
+                        <button
+                          className="flex-1 text-left text-white/50 hover:text-white/80 truncate transition-colors"
+                          onClick={() => handleRestoreSave(save)}
+                          title="Nhấn để khôi phục bản này"
+                        >
+                          {save.label}
+                          <span className="ml-1.5 text-white/20">{save.lines.filter(l => !l.isMarker).length} dòng</span>
+                        </button>
+                      )}
+                      <button
+                        onClick={() => { setEditingSaveId(save.id); setEditingSaveLabel(save.label); }}
+                        className="opacity-0 group-hover:opacity-100 text-white/25 hover:text-amber-400 transition-all shrink-0"
+                        title="Đổi tên"
+                      >
+                        <Pencil className="w-2.5 h-2.5" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteSave(save.id)}
+                        className="opacity-0 group-hover:opacity-100 text-white/25 hover:text-red-400 transition-all shrink-0"
+                        title="Xóa bản lưu này"
+                      >
+                        <X className="w-2.5 h-2.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
