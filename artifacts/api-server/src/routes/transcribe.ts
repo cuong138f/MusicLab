@@ -228,6 +228,17 @@ router.post("/transcribe-audio", upload.single("audio"), async (req, res) => {
   // Sort by start time
   lines.sort((a, b) => a.start - b.start);
 
+  // Detect near-zero timestamp collapse — Gemini returns this when it can't parse
+  // the audio timeline (wrong MIME type, corrupted file, unsupported encoding, etc.)
+  const maxStart = Math.max(...lines.map((l) => l.start));
+  if (lines.length > 3 && maxStart < 2) {
+    req.log.error({ maxStart, lineCount: lines.length }, "Near-zero timestamps — Gemini could not read audio timeline");
+    res.status(502).json({
+      error: "AI nhận ra lời nhưng không đọc được thời gian trong file nhạc này. Hãy thử lại với file MP3 hoặc M4A thay vì WAV/FLAC.",
+    });
+    return;
+  }
+
   // In sync mode: overwrite Gemini's text with the user's verbatim lines (in order)
   // to guarantee the returned text is exactly what the user typed.
   if (validKnownLyrics && lines.length === validKnownLyrics.length) {

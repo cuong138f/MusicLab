@@ -887,8 +887,11 @@ export default function App() {
         return;
       }
 
-      // Save to cache then apply
-      try { localStorage.setItem(cacheKey, JSON.stringify(lines)); } catch { /* quota exceeded — ignore */ }
+      // Only cache if timestamps look valid (avoid persisting Gemini near-zero collapses)
+      const maxStart = lines.length > 0 ? Math.max(...lines.map((l) => l.start)) : 0;
+      if (!(lines.length > 3 && maxStart < 2)) {
+        try { localStorage.setItem(cacheKey, JSON.stringify(lines)); } catch { /* quota exceeded — ignore */ }
+      }
       applyTranscribeResult(lines, keepManual);
     } catch (err) {
       setTranscribeError(err instanceof Error ? err.message : "Lỗi không xác định");
