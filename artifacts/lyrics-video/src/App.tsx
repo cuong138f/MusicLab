@@ -511,6 +511,7 @@ export default function App() {
   const [isExporting, setIsExporting] = useState(false);
   const [exportingFormat, setExportingFormat] = useState<"webm" | "mp4">("webm");
   const [exportProgress, setExportProgress] = useState(0);
+  const [exportError, setExportError] = useState<string | null>(null);
   const [lyricStyleId, setLyricStyleId] = useState<LyricStyleId>(() => {
     const saved = localStorage.getItem("lv_lyricStyleId");
     return (saved && ["purple", "gold", "cyan", "rose", "green", "white"].includes(saved) ? saved : "purple") as LyricStyleId;
@@ -992,112 +993,151 @@ export default function App() {
   // ── MP4 export: offline rendering via WebCodecs + mp4-muxer ──────────────
   const handleExportVideoMp4 = async () => {
     if (!isReady || lyricsLines.length === 0) return;
+    setExportError(null);
+
+    // WebCodecs availability check
     if (typeof VideoEncoder === "undefined") {
-      alert("Xuất MP4 cần Chrome 94+ hoặc Edge 94+.\nVui lòng dùng nút WebM nếu trình duyệt không hỗ trợ.");
+      setExportError("MP4 cần Chrome 94+ / Edge 94+. Hãy dùng WebM.");
       return;
     }
+
+    const W = 1280, H = 720, FPS = 30;
+    const CODEC_VIDEO = "avc1.42E01E"; // H.264 Baseline 3.0 — widest support
+
+    // Check codec is actually supported before starting
+    try {
+      const { supported } = await VideoEncoder.isConfigSupported({
+        codec: CODEC_VIDEO, width: W, height: H, bitrate: 6_000_000, framerate: FPS,
+      });
+      if (!supported) {
+        setExportError("Codec H.264 không được hỗ trợ trên trình duyệt này. Hãy dùng WebM.");
+        return;
+      }
+    } catch {
+      // isConfigSupported may not exist in early WebCodecs — proceed and let encode fail gracefully
+    }
+
     setExportingFormat("mp4");
     setIsExporting(true);
     setExportProgress(0);
 
-    const W = 1280, H = 720, FPS = 30;
-    const canvas = document.createElement("canvas");
-    canvas.width = W; canvas.height = H;
-    const ctx = canvas.getContext("2d")!;
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = W; canvas.height = H;
+      const ctx = canvas.getContext("2d")!;
 
-    const styleColors = CANVAS_COLORS[lyricStyleId] ?? CANVAS_COLORS.purple;
-    const effect = lyricEffect;
-    const fontPct = lyricFontSize;
-    const preroll = prerollSeconds;
-    const lines = lyricsLines;
-    const totalDur = duration || (lines.length > 0 ? lines[lines.length - 1].end + 2 : 60);
-    const totalFrames = Math.ceil(totalDur * FPS);
+      const styleColors = CANVAS_COLORS[lyricStyleId] ?? CANVAS_COLORS.purple;
+      const effect = lyricEffect;
+      const fontPct = lyricFontSize;
+      const preroll = prerollSeconds;
+      const lines = lyricsLines;
+      const totalDur = duration || (lines.length > 0 ? lines[lines.length - 1].end + 2 : 60);
+      const totalFrames = Math.ceil(totalDur * FPS);
 
-    // Preload cover image
-    let coverImg: HTMLImageElement | null = null;
-    if (coverImage) {
-      coverImg = new window.Image();
-      coverImg.src = coverImage;
-      await new Promise<void>((r) => { coverImg!.onload = r; coverImg!.onerror = r; });
-    }
+      // Preload cover image
+      let coverImg: HTMLImageElement | null = null;
+      if (coverImage) {
+        coverImg = new window.Image();
+        coverImg.src = coverImage;
+        await new Promise<void>((r) => { coverImg!.onload = r; coverImg!.onerror = r; });
+      }
 
-    const { Muxer, ArrayBufferTarget } = await import("mp4-muxer");
-    const target = new ArrayBufferTarget();
-    const hasAudio = !!audioFile && typeof AudioEncoder !== "undefined";
-    const muxer = new Muxer({
-      target,
-      video: { codec: "avc", width: W, height: H },
-      ...(hasAudio ? { audio: { codec: "aac", sampleRate: 44100, numberOfChannels: 2 } } : {}),
-      fastStart: "in-memory",
-    });
-
-    // VideoEncoder
-    const videoEncoder = new VideoEncoder({
-      output: (chunk, meta) => muxer.addVideoChunk(chunk, meta ?? {}),
-      error: (e) => { throw e; },
-    });
-    videoEncoder.configure({
-      codec: "avc1.42001f",
-      width: W, height: H,
-      bitrate: 6_000_000,
-      framerate: FPS,
-      latencyMode: "quality",
-    });
-
-    // Audio: decode + encode before video frames
-    if (hasAudio && audioFile) {
-      const audioEncoder = new AudioEncoder({
-        output: (chunk, meta) => muxer.addAudioChunk(chunk, meta ?? {}),
-        error: (e) => { throw e; },
+      const { Muxer, ArrayBufferTarget } = await import("mp4-muxer");
+      const target = new ArrayBufferTarget();
+      const hasAudio = !!audioFile && typeof AudioEncoder !== "undefined";
+      const muxer = new Muxer({
+        target,
+        video: { codec: "avc", width: W, height: H },
+        ...(hasAudio ? { audio: { codec: "aac", sampleRate: 44100, numberOfChannels: 2 } } : {}),
+        fastStart: "in-memory",
       });
-      audioEncoder.configure({ codec: "mp4a.40.2", sampleRate: 44100, numberOfChannels: 2, bitrate: 128_000 });
 
-      const arrayBuf = await audioFile.arrayBuffer();
-      const audioCtx = new AudioContext({ sampleRate: 44100 });
-      const decoded = await audioCtx.decodeAudioData(arrayBuf);
-      await audioCtx.close();
+      // VideoEncoder
+      let videoEncoderError: Error | null = null;
+      const videoEncoder = new VideoEncoder({
+        output: (chunk, meta) => muxer.addVideoChunk(chunk, meta!),
+        error: (e) => { videoEncoderError = e; },
+      });
+      videoEncoder.configure({
+        codec: CODEC_VIDEO,
+        width: W, height: H,
+        bitrate: 6_000_000,
+        framerate: FPS,
+        latencyMode: "quality",
+      });
 
-      const CHUNK = 4096;
-      const numCh = Math.min(decoded.numberOfChannels, 2);
-      for (let i = 0; i < decoded.length; i += CHUNK) {
-        const n = Math.min(CHUNK, decoded.length - i);
-        const data = new Float32Array(numCh * n);
-        for (let ch = 0; ch < numCh; ch++) {
-          const src = decoded.getChannelData(ch);
-          for (let j = 0; j < n; j++) data[ch * n + j] = src[i + j];
+      // Audio: decode + encode before video frames
+      if (hasAudio && audioFile) {
+        let audioEncoderError: Error | null = null;
+        const audioEncoder = new AudioEncoder({
+          output: (chunk, meta) => muxer.addAudioChunk(chunk, meta!),
+          error: (e) => { audioEncoderError = e; },
+        });
+        audioEncoder.configure({ codec: "mp4a.40.2", sampleRate: 44100, numberOfChannels: 2, bitrate: 128_000 });
+
+        const arrayBuf = await audioFile.arrayBuffer();
+        const audioCtx = new AudioContext({ sampleRate: 44100 });
+        const decoded = await audioCtx.decodeAudioData(arrayBuf);
+        await audioCtx.close();
+
+        const CHUNK = 4096;
+        const numCh = Math.min(decoded.numberOfChannels, 2);
+        for (let i = 0; i < decoded.length; i += CHUNK) {
+          const n = Math.min(CHUNK, decoded.length - i);
+          const data = new Float32Array(numCh * n);
+          for (let ch = 0; ch < numCh; ch++) {
+            const src = decoded.getChannelData(ch);
+            for (let j = 0; j < n; j++) data[ch * n + j] = src[i + j];
+          }
+          const ad = new AudioData({
+            format: "f32-planar", sampleRate: 44100,
+            numberOfFrames: n, numberOfChannels: numCh,
+            timestamp: Math.round(i / decoded.sampleRate * 1_000_000), data,
+          });
+          audioEncoder.encode(ad);
+          ad.close();
         }
-        const ad = new AudioData({ format: "f32-planar", sampleRate: 44100, numberOfFrames: n, numberOfChannels: numCh, timestamp: Math.round(i / decoded.sampleRate * 1_000_000), data });
-        audioEncoder.encode(ad);
-        ad.close();
+        await audioEncoder.flush();
+        if (audioEncoderError) throw audioEncoderError;
       }
-      await audioEncoder.flush();
-    }
 
-    // Render all video frames offline (fast, no real-time dependency)
-    for (let fi = 0; fi < totalFrames; fi++) {
-      drawLyricFrame(ctx, W, H, fi / FPS, lines, coverImg, styleColors, effect, fontPct, preroll);
-      const vf = new VideoFrame(canvas, { timestamp: Math.round(fi / FPS * 1_000_000), duration: Math.round(1_000_000 / FPS) });
-      videoEncoder.encode(vf, { keyFrame: fi % 90 === 0 });
-      vf.close();
-      if (fi % 30 === 0) {
-        setExportProgress(fi / totalFrames);
-        await new Promise((r) => setTimeout(r, 0));
+      // Render all video frames offline (fast, no real-time dependency)
+      for (let fi = 0; fi < totalFrames; fi++) {
+        if (videoEncoderError) throw videoEncoderError;
+        drawLyricFrame(ctx, W, H, fi / FPS, lines, coverImg, styleColors, effect, fontPct, preroll);
+        const vf = new VideoFrame(canvas, {
+          timestamp: Math.round(fi / FPS * 1_000_000),
+          duration: Math.round(1_000_000 / FPS),
+        });
+        videoEncoder.encode(vf, { keyFrame: fi % 90 === 0 });
+        vf.close();
+        if (fi % 30 === 0) {
+          setExportProgress(fi / totalFrames * 0.95);
+          await new Promise((r) => setTimeout(r, 0));
+          if (videoEncoderError) throw videoEncoderError;
+        }
       }
+
+      setExportProgress(0.97);
+      await videoEncoder.flush();
+      if (videoEncoderError) throw videoEncoderError;
+      muxer.finalize();
+
+      const blob = new Blob([target.buffer], { type: "video/mp4" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = (audioFile?.name.replace(/\.[^/.]+$/, "") ?? "lyrics-video") + ".mp4";
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setExportError(`Xuất MP4 thất bại: ${msg.slice(0, 120)}`);
+    } finally {
+      setIsExporting(false);
+      setExportProgress(0);
     }
-
-    setExportProgress(0.95);
-    await videoEncoder.flush();
-    muxer.finalize();
-
-    const blob = new Blob([target.buffer], { type: "video/mp4" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = (audioFile?.name.replace(/\.[^/.]+$/, "") ?? "lyrics-video") + ".mp4";
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 10_000);
-    setIsExporting(false);
-    setExportProgress(0);
   };
 
   const handlePlayPause = () => wavesurferRef.current?.playPause();
@@ -1274,9 +1314,16 @@ export default function App() {
 
         <div className="flex-1" />
 
+        {/* Export error */}
+        {exportError && (
+          <span className="text-[10px] text-red-400/90 max-w-[200px] truncate shrink-0 flex items-center gap-1">
+            <span>⚠</span>{exportError}
+          </span>
+        )}
+
         {/* Export buttons */}
         <button
-          onClick={() => { setExportingFormat("webm"); handleExportVideo(); }}
+          onClick={() => { setExportError(null); setExportingFormat("webm"); handleExportVideo(); }}
           disabled={!isReady || lyricsLines.length === 0 || isExporting}
           title="Xuất WebM — realtime, hỗ trợ mọi trình duyệt"
           className="relative h-[38px] px-4 rounded-lg flex items-center gap-1.5 font-semibold text-xs transition-all shrink-0
