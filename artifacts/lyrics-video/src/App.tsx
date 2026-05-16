@@ -70,98 +70,29 @@ function fmtEta(secs: number): string {
   return m > 0 ? `~${m}m${s}s` : `~${s}s`;
 }
 
-const DEFAULT_PROMPT = `You are an expert music lyrics transcription assistant.
+const DEFAULT_PROMPT = `Bạn là chuyên gia phiên âm lời bài hát. Lắng nghe TOÀN BỘ audio từ đầu đến cuối, xuất tất cả dòng lời với timestamp chính xác.
 
-Your task is to listen to the ENTIRE audio file continuously from 0:00 until the final second and produce a complete timestamped transcript of ALL sung vocals.
+OUTPUT: Chỉ mảng JSON thuần — không markdown, không code block, không giải thích.
+[{ "text": "dòng lời", "start": 12.3, "end": 14.8 }, ...]
 
-OUTPUT FORMAT:
-Return ONLY a valid JSON array.
-No markdown.
-No explanations.
-No comments.
+TIMESTAMP:
+• "start" = giây khi giọng ca BẮT ĐẦU dòng này
+• "end" = giây khi giọng ca NGỪNG HẲN tại âm tiết cuối (không phải lúc dòng kế bắt đầu)
+• Số thập phân 1 chữ số  •  "end" > "start"  •  thường 1.5–8 giây/dòng
+• Tăng dần: "start"[n] > "end"[n-1] — không chồng chéo
+• Không vượt tổng thời lượng file
 
-Each item:
-{
-"text": "<exact sung lyric>",
-"start": <seconds>,
-"end": <seconds>
-}
+NỘI DUNG:
+• Ghi TẤT CẢ: verse, chorus, bridge, hook, ad-lib, backing vocal có lời riêng
+• Đoạn lặp (chorus/hook hát nhiều lần): mỗi lần hát = 1 entry riêng với timestamp riêng
+• Bỏ qua chỉ đoạn hoàn toàn không lời (nhạc thuần, solo nhạc cụ)
+• Phiên âm đúng âm thanh nghe được — không tự thêm hay bịa lời
+• Một dòng = một câu nhạc / một hơi thở; nếu > 8 giây thì cắt tại điểm ngắt tự nhiên
 
-TIMESTAMP RULES:
+ĐẦY ĐỦ: Bài hát thường 30–60+ dòng — xuất toàn bộ, không dừng giữa chừng. Dòng cuối phải có "start" nằm trong 60 giây cuối file.
+• Không để khoảng trống > 20 giây giữa hai dòng lời liên tiếp, trừ khi đoạn đó thực sự hoàn toàn không có lời
 
-* Use seconds with 1 decimal precision
-* "start" = exact moment the vocal begins
-* "end" = exact moment the vocal fully stops
-* NEVER use the next line's timestamp as the previous line's end
-* Every line duration should usually be between 1.0 and 7.0 seconds
-* NEVER exceed 10 seconds for one line
-* Split long phrases naturally at breaths
-
-CRITICAL AUDIO SCANNING RULES:
-
-1. PROCESS AUDIO SEQUENTIALLY
-   You MUST scan the audio in chronological order without skipping ahead.
-   Move second-by-second through the song from beginning to end.
-
-2. NEVER JUMP ACROSS INSTRUMENTALS
-   If there is an instrumental section:
-
-* DO NOT skip forward blindly
-* Continue monitoring the audio during the instrumental
-* Detect the EXACT timestamp where vocals return
-* Resume transcription immediately when singing starts again
-
-3. FORBIDDEN BEHAVIOR
-   DO NOT:
-
-* jump from one vocal section to another
-* assume the song ended
-* skip silent gaps
-* skip musical breaks
-* stop after finding repeated choruses
-
-4. VOCAL RE-ENTRY DETECTION
-   During instrumental sections:
-
-* continuously listen for re-entry of vocals
-* detect humming, soft vocals, adlibs, harmonies, layered vocals
-* the moment vocals return, create a new lyric entry immediately
-
-5. REPEATED LYRICS
-   If lyrics repeat later:
-
-* include them AGAIN with completely new timestamps
-* NEVER reuse timestamps from earlier choruses
-
-6. MONOTONIC TIMESTAMPS
-   Every new line must satisfy:
-   new.start > previous.end
-
-No overlaps.
-No duplicate timestamps.
-
-7. DO NOT TRUNCATE
-   The transcript must continue until the actual end of the audio file.
-   Do not stop early even if structure repeats.
-
-8. FINAL VALIDATION BEFORE OUTPUT
-   Before generating JSON:
-
-* confirm the last lyric timestamp occurs near the actual end of the song
-* confirm no large unexplained timestamp gaps exist
-* if a gap exceeds 20 seconds, verify it is truly instrumental
-* verify repeated choruses are all included
-* verify timestamps remain chronological
-
-9. UNCLEAR VOCALS
-   If a lyric is difficult to hear:
-
-* transcribe the closest phonetic approximation
-* NEVER leave text empty
-* NEVER omit a vocal line
-
-REFERENCE LYRICS (for alignment only — actual audio takes priority):
-[PASTE OFFICIAL LYRICS HERE]`.trim();
+Xuất mảng JSON:`.trim();
 
 // ── Word-by-word coloring helpers ─────────────────────────────────────────────
 // CSS mask-image gradients bleed across wrapped lines because they apply to the
@@ -926,39 +857,19 @@ export default function App() {
     const resampled = await offCtx.startRendering();
     const pcmFull = resampled.getChannelData(0);
 
-    // Encode PCM slice as WebM/Opus — Gemini reads timestamps reliably from WebM (WAV causes near-zero collapse)
-    const encodeWebM = async (pcm: Float32Array): Promise<ArrayBuffer> => {
-      const { Muxer, ArrayBufferTarget } = await import("webm-muxer");
-      const target = new ArrayBufferTarget();
-      const muxer = new Muxer({
-        target,
-        audio: { codec: "A_OPUS", sampleRate: TARGET_SR, numberOfChannels: 1 },
-        type: "webm",
-      });
-      let encodeError: Error | null = null;
-      const encoder = new AudioEncoder({
-        output: (chunk, meta) => muxer.addAudioChunk(chunk, meta!),
-        error: (e) => { encodeError = e; },
-      });
-      encoder.configure({ codec: "opus", sampleRate: TARGET_SR, numberOfChannels: 1, bitrate: 64_000 });
-      const FRAME = 320; // 20 ms at 16 kHz
-      for (let s = 0; s < pcm.length; s += FRAME) {
-        const n = Math.min(FRAME, pcm.length - s);
-        const ad = new AudioData({
-          format: "f32-planar",
-          sampleRate: TARGET_SR,
-          numberOfFrames: n,
-          numberOfChannels: 1,
-          timestamp: Math.round(s / TARGET_SR * 1_000_000),
-          data: pcm.slice(s, s + n),
-        });
-        encoder.encode(ad);
-        ad.close();
-      }
-      await encoder.flush();
-      if (encodeError) throw encodeError;
-      muxer.finalize();
-      return target.buffer;
+    const encodeWav = (pcm: Float32Array): ArrayBuffer => {
+      const buf = new ArrayBuffer(44 + pcm.length * 2);
+      const v = new DataView(buf);
+      const w = (o: number, s: string) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+      w(0, "RIFF"); v.setUint32(4, 36 + pcm.length * 2, true);
+      w(8, "WAVE"); w(12, "fmt ");
+      v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+      v.setUint32(24, TARGET_SR, true); v.setUint32(28, TARGET_SR * 2, true);
+      v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+      w(36, "data"); v.setUint32(40, pcm.length * 2, true);
+      for (let i = 0; i < pcm.length; i++)
+        v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, pcm[i])) * 0x7fff, true);
+      return buf;
     };
 
     // Build sample boundaries: [0, cut1, cut2, ..., totalSamples]
@@ -973,8 +884,8 @@ export default function App() {
       const startSample = boundaries[i];
       const endSample = boundaries[i + 1];
       const pcm = pcmFull.slice(startSample, endSample);
-      const webmBuf = await encodeWebM(pcm);
-      const partFile = new File([webmBuf], `part_${i + 1}of${numParts}.webm`, { type: "audio/webm" });
+      const wavBuf = encodeWav(pcm);
+      const partFile = new File([wavBuf], `part_${i + 1}of${numParts}.wav`, { type: "audio/wav" });
       parts.push({ file: partFile, offset: startSample / TARGET_SR });
     }
     return parts;
