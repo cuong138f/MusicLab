@@ -16,9 +16,14 @@ function normalizeMimeType(raw: string): { mimeType: string; ext: string } {
   if (lower.includes("ogg"))  return { mimeType: "audio/ogg",  ext: "ogg"  };
   if (lower.includes("wav") || lower.includes("wave")) return { mimeType: "audio/wav",  ext: "wav"  };
   if (lower.includes("flac")) return { mimeType: "audio/flac", ext: "flac" };
-  // WebM containers — must be sent with the correct MIME type so Gemini's demuxer
-  // can parse the timeline correctly.
-  if (lower.includes("webm")) return { mimeType: "video/webm", ext: "webm" };
+  // WebM containers: audio/webm for audio-only (e.g. split parts), video/webm for full video.
+  // Gemini supports audio/webm natively; sending audio-only content as video/webm causes
+  // "0 Frames found" because it expects video frames.
+  if (lower.includes("webm")) {
+    return lower.startsWith("audio/")
+      ? { mimeType: "audio/webm", ext: "webm" }
+      : { mimeType: "video/webm", ext: "webm" };
+  }
   return { mimeType: "audio/mp3", ext: "mp3" };
 }
 
