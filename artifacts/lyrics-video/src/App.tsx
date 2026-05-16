@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import WaveSurfer from "wavesurfer.js";
+import fixWebmDuration from "fix-webm-duration";
 import { Music, Image, Play, Pause, Wand2, SkipBack, Upload, Loader2, Sparkles, Pencil, Check, X, Download, Scissors, Trash2, ChevronDown } from "lucide-react";
 
 interface LyricLine {
@@ -934,9 +935,12 @@ export default function App() {
       ? "video/webm;codecs=vp9" : "video/webm";
     const recorder = new MediaRecorder(combined, { mimeType, videoBitsPerSecond: 6_000_000 });
     const chunks: BlobPart[] = [];
+    let recordStartTime = 0;
     recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
-    recorder.onstop = () => {
-      const blob = new Blob(chunks, { type: mimeType });
+    recorder.onstop = async () => {
+      const durationMs = Date.now() - recordStartTime;
+      const rawBlob = new Blob(chunks, { type: mimeType });
+      const blob = await fixWebmDuration(rawBlob, durationMs, { logger: false });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -964,6 +968,7 @@ export default function App() {
     const totalDur = wavesurferRef.current.getDuration();
     wavesurferRef.current.seekTo(0);
     await new Promise((r) => setTimeout(r, 100));
+    recordStartTime = Date.now();
     recorder.start(200);
     wavesurferRef.current.play();
 

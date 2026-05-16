@@ -75,6 +75,7 @@
     "zod": "catalog:"
   },
   "dependencies": {
+    "fix-webm-duration": "^1.0.6",
     "mp4-muxer": "^5.2.2",
     "wavesurfer.js": "^7.12.7"
   }
