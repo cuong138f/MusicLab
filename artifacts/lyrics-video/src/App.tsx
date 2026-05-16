@@ -926,19 +926,39 @@ export default function App() {
     const resampled = await offCtx.startRendering();
     const pcmFull = resampled.getChannelData(0);
 
-    const encodeWav = (pcm: Float32Array): ArrayBuffer => {
-      const buf = new ArrayBuffer(44 + pcm.length * 2);
-      const v = new DataView(buf);
-      const w = (o: number, s: string) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
-      w(0, "RIFF"); v.setUint32(4, 36 + pcm.length * 2, true);
-      w(8, "WAVE"); w(12, "fmt ");
-      v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
-      v.setUint32(24, TARGET_SR, true); v.setUint32(28, TARGET_SR * 2, true);
-      v.setUint16(32, 2, true); v.setUint16(34, 16, true);
-      w(36, "data"); v.setUint32(40, pcm.length * 2, true);
-      for (let i = 0; i < pcm.length; i++)
-        v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, pcm[i])) * 0x7fff, true);
-      return buf;
+    // Encode PCM slice as WebM/Opus — Gemini reads timestamps reliably from WebM (WAV causes near-zero collapse)
+    const encodeWebM = async (pcm: Float32Array): Promise<ArrayBuffer> => {
+      const { Muxer, ArrayBufferTarget } = await import("webm-muxer");
+      const target = new ArrayBufferTarget();
+      const muxer = new Muxer({
+        target,
+        audio: { codec: "A_OPUS", sampleRate: TARGET_SR, numberOfChannels: 1 },
+        type: "webm",
+      });
+      let encodeError: Error | null = null;
+      const encoder = new AudioEncoder({
+        output: (chunk, meta) => muxer.addAudioChunk(chunk, meta!),
+        error: (e) => { encodeError = e; },
+      });
+      encoder.configure({ codec: "opus", sampleRate: TARGET_SR, numberOfChannels: 1, bitrate: 64_000 });
+      const FRAME = 320; // 20 ms at 16 kHz
+      for (let s = 0; s < pcm.length; s += FRAME) {
+        const n = Math.min(FRAME, pcm.length - s);
+        const ad = new AudioData({
+          format: "f32-planar",
+          sampleRate: TARGET_SR,
+          numberOfFrames: n,
+          numberOfChannels: 1,
+          timestamp: Math.round(s / TARGET_SR * 1_000_000),
+          data: pcm.slice(s, s + n),
+        });
+        encoder.encode(ad);
+        ad.close();
+      }
+      await encoder.flush();
+      if (encodeError) throw encodeError;
+      muxer.finalize();
+      return target.buffer;
     };
 
     // Build sample boundaries: [0, cut1, cut2, ..., totalSamples]
@@ -953,8 +973,8 @@ export default function App() {
       const startSample = boundaries[i];
       const endSample = boundaries[i + 1];
       const pcm = pcmFull.slice(startSample, endSample);
-      const wavBuf = encodeWav(pcm);
-      const partFile = new File([wavBuf], `part_${i + 1}of${numParts}.wav`, { type: "audio/wav" });
+      const webmBuf = await encodeWebM(pcm);
+      const partFile = new File([webmBuf], `part_${i + 1}of${numParts}.webm`, { type: "audio/webm" });
       parts.push({ file: partFile, offset: startSample / TARGET_SR });
     }
     return parts;
