@@ -1,5 +1,5 @@
 kind = "web"
-previewPath = "/lyrics-video/"
+previewPath = "/"
 title = "Lyrics Video Generator"
 version = "1.0.0"
 id = "artifacts/lyrics-video"
@@ -11,7 +11,7 @@ version = "1.0.0"
 
 [[services]]
 name = "web"
-paths = [ "/lyrics-video/" ]
+paths = [ "/" ]
 localPort = 19575
 
 [services.development]
@@ -28,4 +28,4 @@ to = "/index.html"
 
 [services.env]
 PORT = "19575"
-BASE_PATH = "/lyrics-video/"
+BASE_PATH = "/"

@@ -1,5 +1,5 @@
 kind = "web"
-previewPath = "/"
+previewPath = "/english-ai-coach/"
 title = "English AI Coach"
 version = "1.0.0"
 id = "artifacts/english-ai-coach"
@@ -11,7 +11,7 @@ version = "1.0.0"
 
 [[services]]
 name = "web"
-paths = [ "/" ]
+paths = [ "/english-ai-coach/" ]
 localPort = 18391
 
 [services.development]
@@ -28,4 +28,4 @@ to = "/index.html"
 
 [services.env]
 PORT = "18391"
-BASE_PATH = "/"
+BASE_PATH = "/english-ai-coach/"

@@ -1,73 +1,50 @@
-# English AI Coach
+# Lyrics Video Generator
 
-A modern AI-powered English learning platform for Vietnamese learners — with gamification, AI chat, vocabulary flashcards, speaking practice, and progress tracking. Inspired by Duolingo + Notion + Discord aesthetics.
+A client-side React + Vite app that turns lyrics + music into animated karaoke-style videos with AI transcription support. Export as WebM or MP4.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 8080)
-- `pnpm --filter @workspace/english-ai-coach run dev` — run the frontend (port 18391)
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
+- `pnpm --filter @workspace/api-server run dev` — run the API server (port 8080, path `/api`)
+- `pnpm --filter @workspace/lyrics-video run dev` — run the frontend (port 19575, path `/`)
 - Required env: `DATABASE_URL` — Postgres connection string (auto-provisioned)
-- Required env: `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY`, `VITE_CLERK_PUBLISHABLE_KEY` — Clerk auth (auto-provisioned)
+- Required env: `GEMINI_API_KEY` — for AI audio transcription (`/api/transcribe-audio`)
+- Required env: `SESSION_SECRET` — for Express session
 
 ## Stack
 
 - pnpm workspaces, Node.js 24, TypeScript 5.9
-- Frontend: React + Vite + Tailwind CSS v4 + Framer Motion + shadcn/ui
-- Backend: Express 5
-- Auth: Clerk (via Replit-managed Clerk tenant)
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- Frontend: React + Vite + Tailwind CSS v4 + Framer Motion + shadcn/ui + wavesurfer.js v7
+- Backend: Express 5 (API server for transcription only)
+- DB: PostgreSQL + Drizzle ORM (minimal, mostly stateless)
+- Video export: WebCodecs API + mp4-muxer v5.2.2
 
 ## Where things live
 
-- `lib/api-spec/openapi.yaml` — OpenAPI contract (source of truth)
-- `lib/db/src/schema/` — DB tables: users, vocabulary, lessons, chat, speaking, gamification
-- `artifacts/api-server/src/routes/` — Express route handlers (users, dashboard, vocabulary, lessons, chat, speaking, gamification, leaderboard)
-- `artifacts/english-ai-coach/src/pages/` — React pages
-- `artifacts/english-ai-coach/src/components/` — Shared components (Layout, sidebar, etc.)
-- `artifacts/english-ai-coach/src/index.css` — Theme (dark midnight blue + electric blue + violet)
+- `artifacts/lyrics-video/src/App.tsx` — main app (~2000 lines), all UI logic, Layout B design
+- `artifacts/lyrics-video/src/` — React components and pages
+- `artifacts/api-server/src/routes/transcribe.ts` — AI transcription endpoint
+- `artifacts/lyrics-video/vite.config.ts` — Vite config (reads PORT + BASE_PATH from env)
 
-## Architecture decisions
+## Architecture
 
-- Contract-first OpenAPI: all API types derived from `openapi.yaml` → Orval generates React Query hooks + Zod schemas
-- Spaced Repetition (SM-2 algorithm) built into vocabulary review system
-- Clerk proxy path (`/api/__clerk`) is only active in production — dev uses Clerk CDN
-- Mock AI responses for chat/speaking (no external LLM key required); real AI can be swapped in later
-- Dark mode default via `document.documentElement.classList.add("dark")` in ThemeProvider
+- Fully client-side app: lyrics, timeline, rendering all in-browser
+- SM-2 spaced repetition not used (was for English AI Coach, removed)
+- Video preview rendered to a canvas element, exported via WebCodecs + mp4-muxer
+- `hardwareAcceleration: "prefer-software"` on VideoEncoder for sandbox compat
+- AI transcription calls `/api/transcribe-audio` → Gemini API on the server
+- `lv_customPrompt` localStorage key for custom transcription prompt
+- BASE_PATH env controls Vite base URL (set to `/` in artifact.toml)
 
-## Product
+## Gotchas
 
-English AI Coach offers:
-1. **AI Chat** — Practice English conversation with grammar correction and Vietnamese explanations
-2. **Vocabulary** — Flashcards + quizzes with SM-2 spaced repetition
-3. **Lessons** — Structured lessons (beginner → advanced) with exercises
-4. **Speaking** — Record and score pronunciation, compare with native speaker
-5. **Dashboard** — Streak, XP level, skill breakdown charts, activity feed
-6. **Gamification** — Levels, badges (12 types), daily challenges, weekly leaderboard
-7. **Marketing pages** — Landing, Pricing, Blog, About, Contact
+- Always check BASE_PATH is `/` in `artifacts/lyrics-video/.replit-artifact/artifact.toml`
+- WebCodecs codec: `avc1.42E01E` (software fallback), `avc1.4d0028` (hardware)
+- MP4 export error shown inline in toolbar (exportError state)
+- Never use console.log on server — use `req.log` or `logger`
 
 ## User preferences
 
 - Dark mode default
-- Vietnamese learner audience — AI explanations in Vietnamese
+- Vietnamese UI labels
 - Blue + violet color palette
-- Duolingo + Notion + Discord design vibe
-
-## Gotchas
-
-- Always run codegen after editing `lib/api-spec/openapi.yaml`
-- Clerk proxy (`proxyUrl`) is undefined in dev — only set in prod builds
-- SM-2 algorithm: ease factor stored as integer × 100 (250 = 2.5)
-- Lesson exercises stored as JSON in `lessons.exercises` column
-- Never use console.log on server — use `req.log` or `logger`
-
-## Pointers
-
-- See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
-- See the `clerk-auth` skill for auth configuration and login provider setup
+- Layout B: toolbar on top, sidebar left (lyrics/timeline), main center (video preview), audio player below video, style bar at bottom
