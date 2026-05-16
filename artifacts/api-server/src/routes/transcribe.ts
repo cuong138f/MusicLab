@@ -79,12 +79,11 @@ Rules:
 Output the JSON array now:`.trim();
 
 router.post("/transcribe-audio", async (req, res) => {
-  const { audioBase64, mimeType: rawMimeType, customPrompt, knownLyrics, referenceLyrics } = req.body as {
+  const { audioBase64, mimeType: rawMimeType, customPrompt, knownLyrics } = req.body as {
     audioBase64?: string;
     mimeType?: string;
     customPrompt?: string;
     knownLyrics?: string[];
-    referenceLyrics?: string;
   };
 
   if (!audioBase64 || !rawMimeType) {
@@ -106,20 +105,12 @@ router.post("/transcribe-audio", async (req, res) => {
     ? knownLyrics.map((l) => String(l).trim()).filter(Boolean)
     : null;
 
-  const validRef = !validKnownLyrics && typeof referenceLyrics === "string" && referenceLyrics.trim()
-    ? referenceLyrics.trim()
-    : null;
-
-  const basePrompt = validKnownLyrics
+  const activePrompt = validKnownLyrics
     ? SYNC_PROMPT(validKnownLyrics)
     : (customPrompt?.trim()) || PROMPT;
 
-  const activePrompt = validRef
-    ? `${basePrompt}\n\nREFERENCE LYRICS (correct spelling for this song — when you recognise a lyric line in the audio, use the EXACT spelling from this list; do NOT invent different words):\n${validRef}`
-    : basePrompt;
-
   req.log.info(
-    { rawMimeType, mimeType, bytes: audioBuffer.byteLength, syncMode: !!validKnownLyrics, hasReference: !!validRef, usingCustomPrompt: !!customPrompt?.trim() },
+    { rawMimeType, mimeType, bytes: audioBuffer.byteLength, syncMode: !!validKnownLyrics, usingCustomPrompt: !!customPrompt?.trim() },
     "Starting transcription"
   );
 
