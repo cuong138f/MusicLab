@@ -7,6 +7,7 @@ interface LyricLine {
   text: string;
   start: number;
   end: number;
+  isMarker?: boolean;
 }
 
 function formatTime(s: number) {
@@ -25,6 +26,18 @@ function formatTimeFull(s: number) {
   const m = Math.floor(s / 60);
   const secStr = (s % 60).toFixed(1).padStart(4, "0");
   return `${m}:${secStr}`;
+}
+
+// Returns true for section header lines like [Verse 1], [Điệp khúc], [Chorus], etc.
+// These should not be sent to Gemini as lyric lines to timestamp.
+function isSectionMarker(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  // Bracketed labels: [anything], [[anything]], (anything)
+  if (/^\[.{1,60}\]$/.test(t) || /^\(.{1,60}\)$/.test(t)) return true;
+  // Bare section names (optionally followed by a number)
+  if (/^(verse|chorus|bridge|intro|outro|pre-chorus|pre chorus|hook|rap|drop|interlude|coda|refrain|tag|break|instrumental|solo|ad[- ]?lib|build|skit|điệp khúc|phiên khúc|đoạn|lời|cầu nối)\s*[\d]*$/i.test(t)) return true;
+  return false;
 }
 
 const EXPORT_QUALITY = {
@@ -647,15 +660,18 @@ export default function App() {
     const lookAhead = currentTime + prerollSeconds;
     let idx = -1;
     for (let i = 0; i < lyricsLines.length; i++) {
+      if (lyricsLines[i].isMarker) continue; // section headers never become active
       if (lookAhead >= lyricsLines[i].start) {
         idx = i;
         if (lookAhead < lyricsLines[i].end) break;
       }
     }
     if (idx >= 0 && currentTime > lyricsLines[idx].end) {
-      const nextStart = idx + 1 < lyricsLines.length
-        ? lyricsLines[idx + 1].start - prerollSeconds
-        : Infinity;
+      // Look for the next non-marker line
+      let nextStart = Infinity;
+      for (let j = idx + 1; j < lyricsLines.length; j++) {
+        if (!lyricsLines[j].isMarker) { nextStart = lyricsLines[j].start - prerollSeconds; break; }
+      }
       if (nextStart - currentTime > 4.0) idx = -1;
     }
     return idx;
@@ -696,42 +712,54 @@ export default function App() {
     try { localStorage.setItem("lv_songTitle", derived); } catch { /* ignore */ }
   };
 
+  // Re-insert section markers into a timed lyric array at their original positions.
+  // timedLyrics must have exactly allInputLines.filter(!isSectionMarker).length entries.
+  const reinsertMarkers = (allInputLines: string[], timedLyrics: { text: string; start: number; end: number }[]): LyricLine[] => {
+    const result: LyricLine[] = [];
+    let lyricIdx = 0;
+    for (const text of allInputLines) {
+      if (isSectionMarker(text)) {
+        // Borrow time from the NEXT real lyric (or the last one we've placed)
+        const t = timedLyrics[lyricIdx]?.start ?? timedLyrics[lyricIdx - 1]?.end ?? 0;
+        result.push({ text, start: t, end: t, isMarker: true });
+      } else {
+        if (lyricIdx < timedLyrics.length) {
+          result.push({ ...timedLyrics[lyricIdx], isMarker: false });
+          lyricIdx++;
+        }
+      }
+    }
+    return result;
+  };
+
   const handleAutoTimeline = async () => {
     if (!audioFile || !duration || !lyricsText.trim()) return;
 
-    const lines = lyricsText
-      .split("\n")
-      .map((l) => l.trim())
-      .filter(Boolean);
+    const allInputLines = lyricsText.split("\n").map((l) => l.trim()).filter(Boolean);
+    const lines = allInputLines.filter((l) => !isSectionMarker(l));
     if (!lines.length) return;
 
     setIsAnalyzing(true);
     setLyricsLines([]);
 
     try {
-      // Request `lines.length` cuts: cuts[0] = intro end, cuts[1..] = inter-lyric
       const cuts = await findBestCutPoints(audioFile, lines.length);
-      // boundaries: [introEnd, cut1, cut2, ..., totalDuration]
       const boundaries = [...cuts, duration];
-
-      setLyricsLines(
-        lines.map((text, i) => ({
-          text,
-          start: boundaries[i],
-          end: boundaries[i + 1] ?? duration,
-        }))
-      );
+      const timedLyrics = lines.map((text, i) => ({
+        text,
+        start: boundaries[i],
+        end: boundaries[i + 1] ?? duration,
+      }));
+      setLyricsLines(reinsertMarkers(allInputLines, timedLyrics));
     } catch {
-      // Fallback: skip first quarter as intro, distribute rest evenly
       const introEnd = duration * 0.1;
       const step = (duration - introEnd) / lines.length;
-      setLyricsLines(
-        lines.map((text, i) => ({
-          text,
-          start: introEnd + i * step,
-          end: introEnd + (i + 1) * step,
-        }))
-      );
+      const timedLyrics = lines.map((text, i) => ({
+        text,
+        start: introEnd + i * step,
+        end: introEnd + (i + 1) * step,
+      }));
+      setLyricsLines(reinsertMarkers(allInputLines, timedLyrics));
     } finally {
       setIsAnalyzing(false);
     }
@@ -788,45 +816,44 @@ export default function App() {
     keepManual = false,
   ) => {
     if (keepManual) {
-      const manualLines = lyricsText.split("\n").map((l) => l.trim()).filter(Boolean);
+      const allInputLines = lyricsText.split("\n").map((l) => l.trim()).filter(Boolean);
+      const lyricOnly = allInputLines.filter((l) => !isSectionMarker(l));
 
-      // Best case: server sent back per-line timestamps for each of our lines
-      // (sync mode — line count matches). Use them directly.
-      if (manualLines.length > 0 && geminiLines.length === manualLines.length) {
-        const synced = manualLines.map((text, i) => ({
+      // Best case: Gemini returned exactly one timestamp per lyric line (markers excluded)
+      if (lyricOnly.length > 0 && geminiLines.length === lyricOnly.length) {
+        const timedLyrics = lyricOnly.map((text, i) => ({
           text,
           start: geminiLines[i].start,
           end:   geminiLines[i].end,
         }));
-        setLyricsLines(synced);
+        setLyricsLines(reinsertMarkers(allInputLines, timedLyrics));
         return;
       }
 
-      // Fallback: line count mismatch — distribute Gemini's overall time range
-      // proportionally across user's lines by character length.
-      if (manualLines.length > 0 && geminiLines.length > 0) {
+      // Fallback: distribute Gemini's time range proportionally across lyric lines
+      if (lyricOnly.length > 0 && geminiLines.length > 0) {
         const rangeStart = geminiLines[0].start;
         const rangeEnd   = geminiLines[geminiLines.length - 1].end;
-        const totalDur   = Math.max(rangeEnd - rangeStart, manualLines.length * 2);
-
-        const charLens   = manualLines.map((l) => Math.max(l.length, 1));
+        const totalDur   = Math.max(rangeEnd - rangeStart, lyricOnly.length * 2);
+        const charLens   = lyricOnly.map((l) => Math.max(l.length, 1));
         const totalChars = charLens.reduce((a, b) => a + b, 0);
-
         let cumulative = 0;
-        const synced = manualLines.map((text, i) => {
+        const timedLyrics = lyricOnly.map((text, i) => {
           const startFrac = cumulative / totalChars;
           cumulative += charLens[i];
-          const endFrac   = cumulative / totalChars;
-          const start     = Math.round((rangeStart + startFrac * totalDur) * 10) / 10;
-          const end       = Math.round((rangeStart + endFrac   * totalDur) * 10) / 10;
-          return { text, start, end };
+          const endFrac = cumulative / totalChars;
+          return {
+            text,
+            start: Math.round((rangeStart + startFrac * totalDur) * 10) / 10,
+            end:   Math.round((rangeStart + endFrac   * totalDur) * 10) / 10,
+          };
         });
-        setLyricsLines(synced);
+        setLyricsLines(reinsertMarkers(allInputLines, timedLyrics));
         return;
       }
     }
 
-    // "Nhận diện AI" mode (or Đồng bộ fallback): use Gemini's text + timestamps as-is
+    // "Nhận diện AI" mode: use Gemini's text + timestamps as-is (no markers expected)
     setLyricsText(geminiLines.map((l) => l.text).join("\n"));
     setLyricsLines(geminiLines);
   };
@@ -840,8 +867,10 @@ export default function App() {
     const cacheKey = getAudioCacheKey(audioFile);
 
     // Sync mode always calls the API fresh (lyrics-specific, can't reuse free-form cache)
-    const manualLines = lyricsText.split("\n").map((l) => l.trim()).filter(Boolean);
-    const useSyncMode = keepManual && manualLines.length > 0;
+    // Strip section markers — Gemini should only see singable lines
+    const allInputLines = lyricsText.split("\n").map((l) => l.trim()).filter(Boolean);
+    const lyricOnlyLines = allInputLines.filter((l) => !isSectionMarker(l));
+    const useSyncMode = keepManual && lyricOnlyLines.length > 0;
 
     try {
       // Check cache first (unless force refresh or sync mode)
@@ -871,7 +900,7 @@ export default function App() {
       const form = new FormData();
       form.append("audio", fileToSend, fileToSend.name);
       if (useSyncMode) {
-        form.append("knownLyrics", JSON.stringify(manualLines));
+        form.append("knownLyrics", JSON.stringify(lyricOnlyLines));
       } else if (customPrompt.trim() !== DEFAULT_PROMPT.trim()) {
         form.append("customPrompt", customPrompt.trim());
       }
@@ -1083,7 +1112,7 @@ export default function App() {
       const effect = lyricEffect;
       const fontPct = lyricFontSize;
       const preroll = prerollSeconds;
-      const lines = lyricsLines;
+      const lines = lyricsLines.filter((l) => !l.isMarker);
       const totalDur = duration || (lines.length > 0 ? lines[lines.length - 1].end + 2 : 60);
       const totalFrames = Math.ceil(totalDur * FPS);
 
@@ -1238,7 +1267,7 @@ export default function App() {
       const effect = lyricEffect;
       const fontPct = lyricFontSize;
       const preroll = prerollSeconds;
-      const lines = lyricsLines;
+      const lines = lyricsLines.filter((l) => !l.isMarker);
       const totalDur = duration || (lines.length > 0 ? lines[lines.length - 1].end + 2 : 60);
       const totalFrames = Math.ceil(totalDur * FPS);
 
@@ -1374,7 +1403,7 @@ export default function App() {
     wavesurferRef.current.play();
   };
 
-  const lineCount = lyricsText.split("\n").filter((l) => l.trim()).length;
+  const lineCount = lyricsText.split("\n").filter((l) => l.trim() && !isSectionMarker(l.trim())).length;
 
   // 2-line display data
   const currentLine = currentLineIndex >= 0 ? lyricsLines[currentLineIndex] : null;
@@ -1728,7 +1757,7 @@ export default function App() {
               <div className="flex flex-col min-h-0 shrink-0 max-h-[45%]">
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-[10px] font-semibold tracking-[0.12em] uppercase text-white/40">
-                    Timeline — {lyricsLines.length} dòng
+                    Timeline — {lyricsLines.filter(l => !l.isMarker).length} dòng
                   </p>
                   <div className="flex items-center gap-1">
                     {/* Import */}
@@ -1757,7 +1786,16 @@ export default function App() {
                   </div>
                 </div>
                 <div className="space-y-0.5 max-h-52 overflow-y-auto rounded-xl border border-white/[0.06] bg-white/[0.02] p-1">
-                  {lyricsLines.map((line, i) => (
+                  {lyricsLines.map((line, i) => line.isMarker ? (
+                    /* ── Section marker row ── */
+                    <div key={i} className="flex items-center gap-1.5 px-2 py-1 mt-1 first:mt-0">
+                      <div className="flex-1 h-px bg-violet-500/20" />
+                      <span className="text-[9px] font-semibold tracking-widest uppercase text-violet-400/60 px-1 shrink-0">
+                        {line.text.replace(/^\[|\]$/g, "")}
+                      </span>
+                      <div className="flex-1 h-px bg-violet-500/20" />
+                    </div>
+                  ) : (
                     <div
                       key={i}
                       className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs transition-colors group ${
