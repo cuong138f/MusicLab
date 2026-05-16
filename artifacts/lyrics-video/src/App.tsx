@@ -827,9 +827,13 @@ export default function App() {
           audioBase64,
           mimeType,
           // Sync mode: send user's lyrics so AI only produces timestamps, not new text
+          // Free mode + typed lyrics: send as spelling reference so AI doesn't mis-transcribe words
           ...(useSyncMode
             ? { knownLyrics: manualLines }
-            : { customPrompt: customPrompt.trim() !== DEFAULT_PROMPT.trim() ? customPrompt.trim() : undefined }
+            : {
+                customPrompt: customPrompt.trim() !== DEFAULT_PROMPT.trim() ? customPrompt.trim() : undefined,
+                referenceLyrics: manualLines.length > 0 ? lyricsText.trim() : undefined,
+              }
           ),
         }),
       });
