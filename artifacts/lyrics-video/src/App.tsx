@@ -557,6 +557,8 @@ export default function App() {
   const [fixRequest, setFixRequest] = useState("");
   const [isFixing, setIsFixing] = useState(false);
   const [fixError, setFixError] = useState<string | null>(null);
+  const [splitParts, setSplitParts] = useState<1 | 2 | 3>(1);
+  const [splitProgress, setSplitProgress] = useState<{ current: number; total: number } | null>(null);
   const [customPrompt, setCustomPrompt] = useState<string>(() =>
     localStorage.getItem("lv_customPrompt") ?? DEFAULT_PROMPT
   );
@@ -803,6 +805,58 @@ export default function App() {
     return compressed;
   };
 
+  // Decode audio → 16 kHz mono, slice into numParts equal PCM segments, encode each as WAV.
+  // Returns [{file, offset}] where offset is the start time (seconds) of each part.
+  const splitDecodeAudio = async (
+    file: File,
+    numParts: number
+  ): Promise<Array<{ file: File; offset: number }>> => {
+    const TARGET_SR = 16_000;
+    const arrayBuf = await file.arrayBuffer();
+    const ctx = new AudioContext();
+    let audioBuf: AudioBuffer;
+    try {
+      audioBuf = await ctx.decodeAudioData(arrayBuf);
+    } finally {
+      await ctx.close();
+    }
+    const totalSamples = Math.ceil(audioBuf.duration * TARGET_SR);
+    const offCtx = new OfflineAudioContext(1, totalSamples, TARGET_SR);
+    const src = offCtx.createBufferSource();
+    src.buffer = audioBuf;
+    src.connect(offCtx.destination);
+    src.start();
+    const resampled = await offCtx.startRendering();
+    const pcmFull = resampled.getChannelData(0);
+
+    const encodeWav = (pcm: Float32Array): ArrayBuffer => {
+      const buf = new ArrayBuffer(44 + pcm.length * 2);
+      const v = new DataView(buf);
+      const w = (o: number, s: string) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+      w(0, "RIFF"); v.setUint32(4, 36 + pcm.length * 2, true);
+      w(8, "WAVE"); w(12, "fmt ");
+      v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+      v.setUint32(24, TARGET_SR, true); v.setUint32(28, TARGET_SR * 2, true);
+      v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+      w(36, "data"); v.setUint32(40, pcm.length * 2, true);
+      for (let i = 0; i < pcm.length; i++)
+        v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, pcm[i])) * 0x7fff, true);
+      return buf;
+    };
+
+    const samplesPerPart = Math.ceil(totalSamples / numParts);
+    const parts: Array<{ file: File; offset: number }> = [];
+    for (let i = 0; i < numParts; i++) {
+      const startSample = i * samplesPerPart;
+      const endSample = Math.min((i + 1) * samplesPerPart, totalSamples);
+      const pcm = pcmFull.slice(startSample, endSample);
+      const wavBuf = encodeWav(pcm);
+      const partFile = new File([wavBuf], `part_${i + 1}of${numParts}.wav`, { type: "audio/wav" });
+      parts.push({ file: partFile, offset: startSample / TARGET_SR });
+    }
+    return parts;
+  };
+
   const getAudioCacheKey = (file: File) =>
     `lvg_transcribe_${file.name}_${file.size}_${file.lastModified}`;
 
@@ -896,6 +950,41 @@ export default function App() {
         }
       }
 
+      // ── Split mode: decode once → slice N parts → send sequentially → offset & merge ──
+      if (splitParts > 1 && !useSyncMode) {
+        const parts = await splitDecodeAudio(audioFile, splitParts);
+        const allLines: { text: string; start: number; end: number }[] = [];
+        for (let pi = 0; pi < parts.length; pi++) {
+          setSplitProgress({ current: pi + 1, total: splitParts });
+          const { file: partFile, offset } = parts[pi];
+          const form = new FormData();
+          form.append("audio", partFile, partFile.name);
+          if (customPrompt.trim() !== DEFAULT_PROMPT.trim()) {
+            form.append("customPrompt", customPrompt.trim());
+          }
+          const res = await fetch("/api/transcribe-audio", { method: "POST", body: form });
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({})) as { error?: string };
+            throw new Error(errData.error ?? `HTTP ${res.status}`);
+          }
+          const data = await res.json() as { lines: { text: string; start: number; end: number }[] };
+          const offsetLines = (data.lines ?? []).map((l) => ({
+            text: l.text,
+            start: +(l.start + offset).toFixed(1),
+            end:   +(l.end   + offset).toFixed(1),
+          }));
+          allLines.push(...offsetLines);
+        }
+        setSplitProgress(null);
+        if (!allLines.length) {
+          setTranscribeError("AI không tìm thấy lời bài hát trong file này.");
+          return;
+        }
+        allLines.sort((a, b) => a.start - b.start);
+        applyTranscribeResult(allLines, keepManual);
+        return;
+      }
+
       // Compress WAV before upload: downsample to 16 kHz mono (~90% size reduction)
       const fileToSend = /\.wav$/i.test(audioFile.name) || audioFile.type === "audio/wav"
         ? await downsampleWavFile(audioFile)
@@ -945,6 +1034,7 @@ export default function App() {
     } finally {
       setIsTranscribing(false);
       setIsSyncing(false);
+      setSplitProgress(null);
     }
   };
 
@@ -1616,7 +1706,9 @@ export default function App() {
             disabled:opacity-30 disabled:cursor-not-allowed disabled:shadow-none"
         >
           {isTranscribing && !isSyncing ? (
-            <><Loader2 className="w-3.5 h-3.5 animate-spin" />Đang nhận diện...</>
+            splitProgress
+              ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Phần {splitProgress.current}/{splitProgress.total}...</>
+              : <><Loader2 className="w-3.5 h-3.5 animate-spin" />Đang nhận diện...</>
           ) : (
             <><Sparkles className="w-3.5 h-3.5" />Nhận diện AI</>
           )}
@@ -1640,6 +1732,23 @@ export default function App() {
         </button>
 
         {/* Status indicators */}
+        {/* Split parts selector */}
+        <div className="flex items-center gap-0.5 bg-white/[0.04] rounded-lg p-0.5 border border-white/[0.06] shrink-0" title="Chia bài thành nhiều phần để gửi tuần tự — giúp nhận diện bài dài đầy đủ hơn">
+          {([1, 2, 3] as const).map((n) => (
+            <button
+              key={n}
+              onClick={() => setSplitParts(n)}
+              disabled={isTranscribing || isSyncing}
+              className={`px-2 py-1 rounded-md text-[10px] font-semibold transition-all disabled:opacity-40 ${
+                splitParts === n ? "bg-white/15 text-white" : "text-white/30 hover:text-white/60"
+              }`}
+              title={n === 1 ? "Gửi nguyên bài (mặc định)" : `Chia thành ${n} phần, gửi tuần tự`}
+            >
+              {n === 1 ? "1×" : `${n} phần`}
+            </button>
+          ))}
+        </div>
+
         {transcribeFromCache && !isTranscribing && (
           <span className="text-[10px] text-emerald-400/80 flex items-center gap-1 shrink-0">
             <span>⚡</span>Đã lưu cache
