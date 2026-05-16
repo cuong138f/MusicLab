@@ -17,15 +17,6 @@ localPort = 18391
 [services.development]
 run = "pnpm --filter @workspace/english-ai-coach run dev"
 
-[services.production]
-build = [ "pnpm", "--filter", "@workspace/english-ai-coach", "run", "build" ]
-publicDir = "artifacts/english-ai-coach/dist/public"
-serve = "static"
-
-[[services.production.rewrites]]
-from = "/*"
-to = "/index.html"
-
 [services.env]
 PORT = "18391"
 BASE_PATH = "/english-ai-coach/"
