@@ -54,37 +54,40 @@ function fmtEta(secs: number): string {
   return m > 0 ? `~${m}m${s}s` : `~${s}s`;
 }
 
-const DEFAULT_PROMPT = `You are an expert music lyrics transcription assistant. Your task is to listen to the ENTIRE audio file from beginning to end and produce a precise, complete timestamped transcript of ALL sung lyrics.
+const DEFAULT_PROMPT = `Bạn là chuyên gia phiên âm lời bài hát. Nhiệm vụ: lắng nghe TOÀN BỘ file âm thanh từ đầu đến cuối và tạo bản ghi lời có timestamp chính xác, đầy đủ cho mọi dòng được hát.
 
-RETURN FORMAT: A JSON array only — no markdown, no code blocks, no comments, no explanations.
-Each object: { "text": "<lyric line>", "start": <seconds>, "end": <seconds> }
-- "start": exact second when the singer's voice begins this line
-- "end": exact second when the singer's voice stops on the last syllable (NOT when the next line starts)
-- Times must be numbers with 1 decimal place precision
+ĐỊNH DẠNG TRẢ VỀ: Chỉ một mảng JSON thuần — không markdown, không code block, không giải thích.
+Mỗi phần tử: { "text": "<dòng lời>", "start": <giây>, "end": <giây> }
+- "start": giây chính xác khi giọng ca BẮT ĐẦU dòng này
+- "end": giây chính xác khi giọng ca KẾT THÚC âm tiết cuối (KHÔNG phải khi dòng tiếp theo bắt đầu)
+- Thời gian là số thập phân 1 chữ số (ví dụ: 12.3)
+- "end" phải lớn hơn "start"; thời lượng mỗi dòng thường từ 1.5 đến 8 giây
 
-CRITICAL RULES — follow every one strictly:
+QUY TẮC BẮT BUỘC — tuân thủ tất cả:
 
-1. SCAN THE ENTIRE AUDIO: Start at 0:00 and work forward to the very last second. Do NOT stop early, do NOT skip the middle or end of the song.
+1. QUÉT TOÀN BỘ AUDIO: Bắt đầu từ 0:00 và tiến đến giây cuối cùng. KHÔNG dừng sớm, KHÔNG bỏ qua đoạn giữa hoặc cuối bài.
 
-2. EVERY VOCAL LINE MUST BE INCLUDED: Include verse lines, chorus lines, bridge lines, hooks, ad-libs, background harmonies if they carry distinct lyrics. Missing ANY sung line is an error.
+2. GHI ĐẦY ĐỦ MỌI DÒNG LỜI: Bao gồm verse, chorus, bridge, hook, ad-lib, hát nền nếu có lời riêng biệt. Bỏ sót bất kỳ dòng nào là lỗi nghiêm trọng.
 
-3. REPEATED SECTIONS (chorus/hook): If the same lyrics are sung again later in the song (e.g. the chorus repeats at 1:30, 2:45, and 3:10), you MUST include ALL occurrences as separate entries with their real individual timestamps. Never copy-paste the same timestamps — each occurrence has its own unique start/end.
+3. ĐOẠN LẶP LẠI (chorus/hook): Nếu cùng một đoạn lời được hát lại nhiều lần, BẮT BUỘC ghi TẤT CẢ lần xuất hiện với timestamp riêng biệt. KHÔNG dùng chung timestamp cho các lần khác nhau — mỗi lần hát là một entry độc lập.
 
-4. "end" = voice stop, NOT next-line start: If a singer holds a note and stops at 3.8s but the next line begins at 6.0s, "end" = 3.8, not 6.0. Each line's duration (end − start) is typically 1.5–7 seconds.
+4. "end" = thời điểm giọng ngừng hát: Nếu ca sĩ giữ note đến 3.8s rồi ngừng nhưng dòng tiếp theo bắt đầu lúc 6.0s, thì "end" = 3.8, không phải 6.0.
 
-5. NEVER exceed 10 seconds duration for a single line. Long held notes are still ≤10 s. If a line would be longer, split it at a natural breath point.
+5. KHÔNG QUÁ 10 GIÂY mỗi dòng. Nếu dài hơn, cắt tại điểm ngắt tự nhiên (hơi thở, câu nhạc).
 
-6. SKIP ONLY TRUE INSTRUMENTALS: Skip intro/outro/solo/break sections with ZERO vocals. Do NOT skip a section just because you are unsure — transcribe your best estimate.
+6. CHỈ BỎ QUA đoạn nhạc thuần không có lời (intro nhạc, solo guitar, break trống). Nếu có bất kỳ lời nào — ghi lại. Nếu không chắc — vẫn ghi.
 
-7. DO NOT INVENT LYRICS: Transcribe what is actually sung. If a word is unclear, write your best phonetic approximation. Do not leave lines empty.
+7. KHÔNG TỰ THÊM LỜI: Phiên âm đúng những gì được hát. Nếu không nghe rõ, ghi xấp xỉ âm thanh. Không để trống dòng.
 
-8. TIMESTAMPS MUST INCREASE MONOTONICALLY: Each line's start must be strictly greater than the previous line's end. No overlaps.
+8. TIMESTAMP TĂNG DẦN: "start" của mỗi dòng phải lớn hơn "end" của dòng trước. Tuyệt đối không chồng chéo.
 
-9. DO NOT TRUNCATE: Many songs have 30–60+ lyric lines. Output ALL of them. Do not stop after 20–30 lines if the song continues.
+9. KHÔNG CẮT NGẮN KẾT QUẢ: Bài hát thường có 30–60+ dòng. Xuất ĐẦY ĐỦ tất cả. Không dừng sau 20–30 dòng nếu bài hát vẫn còn lời tiếp theo.
 
-Verify your work: before outputting, confirm that your last entry's "start" time is near the end of the audio (within the last 60 seconds), and that your count of lines is plausible for a typical song of that length.
+10. TIMESTAMP KHÔNG VƯỢT QUÁ ĐỘ DÀI BÀI: "end" của dòng cuối cùng không được vượt quá tổng thời lượng file âm thanh.
 
-Output the JSON array now:`.trim();
+Kiểm tra trước khi xuất: xác nhận dòng cuối cùng có "start" gần cuối file (trong 60 giây cuối), và tổng số dòng hợp lý so với độ dài bài hát.
+
+Xuất mảng JSON ngay bây giờ:`.trim();
 
 // ── Word-by-word coloring helpers ─────────────────────────────────────────────
 // CSS mask-image gradients bleed across wrapped lines because they apply to the
