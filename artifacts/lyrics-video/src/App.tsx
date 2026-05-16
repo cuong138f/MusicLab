@@ -1162,193 +1162,189 @@ export default function App() {
         <span className="font-bold text-base tracking-tight">Lyrics Video Generator</span>
       </header>
 
+      {/* ── TOOLBAR ─────────────────────────────────────────── */}
+      <div className="shrink-0 border-b border-white/[0.06] bg-[#0d0d0d] px-4 py-2.5 flex items-center gap-2.5 overflow-x-auto">
+        {/* Cover — compact 16:9 thumbnail */}
+        <label className="cursor-pointer group shrink-0">
+          <input type="file" accept="image/*" className="sr-only" onChange={handleCoverUpload} />
+          <div className="w-[68px] h-[38px] rounded-lg overflow-hidden border border-white/[0.08] group-hover:border-violet-500/40 transition-colors relative bg-white/[0.03] flex items-center justify-center">
+            {coverImage ? (
+              <>
+                <img src={coverImage} className="absolute inset-0 w-full h-full object-cover" alt="cover" />
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/50 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                  <Upload className="w-3 h-3 text-white" />
+                </div>
+              </>
+            ) : (
+              <div className="flex flex-col items-center gap-0.5">
+                <Image className="w-3.5 h-3.5 text-white/20 group-hover:text-violet-400 transition-colors" />
+                <span className="text-[8px] text-white/20 group-hover:text-violet-400 transition-colors leading-none">Cover</span>
+              </div>
+            )}
+          </div>
+        </label>
+
+        {/* Audio upload */}
+        <label className="cursor-pointer group shrink-0">
+          <input type="file" accept="audio/*" className="sr-only" onChange={handleAudioUpload} />
+          <div className={`h-[38px] px-3 rounded-lg border transition-all flex items-center gap-2 ${
+            audioFile
+              ? "border-violet-500/30 bg-violet-500/[0.06]"
+              : "border-white/[0.08] bg-white/[0.03] group-hover:border-violet-500/30 group-hover:bg-violet-500/[0.04]"
+          }`}>
+            <Music className={`w-3.5 h-3.5 shrink-0 ${audioFile ? "text-violet-400" : "text-white/25 group-hover:text-violet-400 transition-colors"}`} />
+            <div className="min-w-0">
+              <p className={`text-xs font-medium truncate max-w-[150px] leading-tight ${audioFile ? "text-white/80" : "text-white/30 group-hover:text-white/50 transition-colors"}`}>
+                {audioFile ? audioFile.name.replace(/\.[^/.]+$/, "") : "Upload nhạc"}
+              </p>
+              {audioFile && isReady && (
+                <p className="text-[9px] text-white/30 font-mono leading-tight">{(audioFile.size / 1024 / 1024).toFixed(1)} MB · {formatTime(duration)}</p>
+              )}
+            </div>
+          </div>
+        </label>
+
+        <div className="h-5 w-px bg-white/[0.08] shrink-0 mx-0.5" />
+
+        {/* AI transcribe */}
+        <button
+          onClick={() => handleAiTranscribe(false)}
+          disabled={!audioFile || isTranscribing || isSyncing || isAnalyzing}
+          className="h-[38px] px-4 rounded-lg font-semibold text-xs flex items-center gap-1.5 transition-all shrink-0
+            bg-gradient-to-r from-emerald-600 to-teal-600
+            hover:from-emerald-500 hover:to-teal-500
+            shadow-md shadow-emerald-500/20
+            disabled:opacity-30 disabled:cursor-not-allowed disabled:shadow-none"
+        >
+          {isTranscribing && !isSyncing ? (
+            <><Loader2 className="w-3.5 h-3.5 animate-spin" />Đang nhận diện...</>
+          ) : (
+            <><Sparkles className="w-3.5 h-3.5" />Nhận diện AI</>
+          )}
+        </button>
+
+        {/* Sync timestamps */}
+        <button
+          onClick={() => handleAiTranscribe(false, true)}
+          disabled={!audioFile || isTranscribing || isSyncing || isAnalyzing}
+          className="h-[38px] px-3 rounded-lg font-semibold text-xs flex items-center gap-1.5 transition-all shrink-0
+            border border-violet-500/30 text-violet-300/80
+            hover:bg-violet-500/10 hover:border-violet-500/60 hover:text-violet-200
+            disabled:opacity-30 disabled:cursor-not-allowed"
+          title="Giữ nguyên lời nhập tay, chỉ lấy timestamps từ Gemini"
+        >
+          {isSyncing ? (
+            <><Loader2 className="w-3.5 h-3.5 animate-spin" />Đang đồng bộ...</>
+          ) : (
+            <><span className="text-base leading-none">⇌</span>Đồng bộ</>
+          )}
+        </button>
+
+        {/* Status indicators */}
+        {transcribeFromCache && !isTranscribing && (
+          <span className="text-[10px] text-emerald-400/80 flex items-center gap-1 shrink-0">
+            <span>⚡</span>Đã lưu cache
+          </span>
+        )}
+        {transcribeError && (
+          <span className="text-[10px] text-red-400/80 max-w-[180px] truncate shrink-0">{transcribeError}</span>
+        )}
+        {audioFile && (lyricsLines.length > 0 || transcribeFromCache) && (
+          <button
+            onClick={() => handleAiTranscribe(true)}
+            disabled={isTranscribing || isSyncing}
+            className="text-[10px] text-white/25 hover:text-violet-400 underline underline-offset-2 transition-colors shrink-0 disabled:opacity-30"
+          >
+            Nhận diện lại
+          </button>
+        )}
+
+        {/* Prompt toggle */}
+        <button
+          onClick={() => setShowPrompt((v) => !v)}
+          className={`flex items-center gap-1 text-[10px] transition-colors shrink-0 ${showPrompt ? "text-violet-400" : "text-white/20 hover:text-violet-400"}`}
+          title="Tuỳ chỉnh prompt gửi Gemini"
+        >
+          <ChevronDown
+            className="w-3 h-3 transition-transform duration-200"
+            style={{ transform: showPrompt ? "rotate(180deg)" : "rotate(0deg)" }}
+          />
+          <span>Prompt</span>
+          {customPrompt.trim() !== DEFAULT_PROMPT.trim() && (
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 ml-0.5" />
+          )}
+        </button>
+
+        <div className="flex-1" />
+
+        {/* Export buttons */}
+        <button
+          onClick={() => { setExportingFormat("webm"); handleExportVideo(); }}
+          disabled={!isReady || lyricsLines.length === 0 || isExporting}
+          title="Xuất WebM — realtime, hỗ trợ mọi trình duyệt"
+          className="relative h-[38px] px-4 rounded-lg flex items-center gap-1.5 font-semibold text-xs transition-all shrink-0
+            border border-violet-500/40 text-violet-300
+            hover:bg-violet-500/10 hover:border-violet-400/60
+            disabled:opacity-30 disabled:cursor-not-allowed overflow-hidden"
+        >
+          {isExporting && exportingFormat === "webm" ? (
+            <>
+              <span className="absolute inset-0 bg-violet-500/20 origin-left" style={{ transform: `scaleX(${exportProgress})`, transition: "transform 0.4s linear" }} />
+              <Loader2 className="w-3 h-3 animate-spin relative z-10" />
+              <span className="relative z-10">{Math.round(exportProgress * 100)}%</span>
+            </>
+          ) : (
+            <><Download className="w-3 h-3" />WebM</>
+          )}
+        </button>
+        <button
+          onClick={handleExportVideoMp4}
+          disabled={!isReady || lyricsLines.length === 0 || isExporting}
+          title="Xuất MP4 — offline rendering, cần Chrome/Edge 94+"
+          className="relative h-[38px] px-4 rounded-lg flex items-center gap-1.5 font-semibold text-xs transition-all shrink-0
+            bg-gradient-to-r from-fuchsia-600 to-violet-600
+            hover:from-fuchsia-500 hover:to-violet-500
+            shadow-md shadow-violet-500/25
+            disabled:opacity-30 disabled:cursor-not-allowed disabled:shadow-none overflow-hidden"
+        >
+          {isExporting && exportingFormat === "mp4" ? (
+            <>
+              <span className="absolute inset-0 bg-white/15 origin-left" style={{ transform: `scaleX(${exportProgress})`, transition: "transform 0.4s linear" }} />
+              <Loader2 className="w-3 h-3 animate-spin relative z-10" />
+              <span className="relative z-10">{Math.round(exportProgress * 100)}%</span>
+            </>
+          ) : (
+            <><Download className="w-3 h-3" />MP4</>
+          )}
+        </button>
+      </div>
+
+      {/* Collapsible prompt editor (below toolbar) */}
+      {showPrompt && (
+        <div className="shrink-0 border-b border-white/[0.06] bg-[#0d0d0d] px-5 py-3 flex gap-4 items-start">
+          <textarea
+            value={customPrompt}
+            onChange={(e) => setCustomPrompt(e.target.value)}
+            rows={6}
+            spellCheck={false}
+            className="flex-1 bg-white/[0.03] border border-white/[0.08] focus:border-violet-500/40 rounded-xl p-3 text-[11px] text-white/60 resize-none outline-none transition-all font-mono leading-relaxed"
+          />
+          <button
+            onClick={() => setCustomPrompt(DEFAULT_PROMPT)}
+            className="text-[10px] text-white/25 hover:text-white/50 transition-colors underline underline-offset-2 mt-1 shrink-0"
+          >
+            Khôi phục mặc định
+          </button>
+        </div>
+      )}
+
       <div className="flex flex-1 overflow-hidden">
         {/* ── LEFT PANEL ─────────────────────────────────────── */}
-        <aside className="w-80 shrink-0 border-r border-white/[0.06] flex flex-col overflow-y-auto bg-[#0d0d0d]">
-          <div className="p-5 space-y-6">
-
-            {/* Cover Upload */}
-            <section>
-              <p className="text-[10px] font-semibold tracking-[0.12em] uppercase text-white/40 mb-2">Cover 16:9</p>
-              <label className="block cursor-pointer group">
-                <input type="file" accept="image/*" className="sr-only" onChange={handleCoverUpload} />
-                <div className="aspect-video rounded-xl overflow-hidden border border-white/[0.08] group-hover:border-violet-500/40 transition-colors relative bg-white/[0.03]">
-                  {coverImage ? (
-                    <>
-                      <img src={coverImage} className="w-full h-full object-cover" alt="cover" />
-                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
-                        <Upload className="w-6 h-6 text-white" />
-                      </div>
-                    </>
-                  ) : (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
-                      <div className="w-10 h-10 rounded-xl bg-white/[0.05] group-hover:bg-violet-500/10 flex items-center justify-center transition-colors">
-                        <Image className="w-5 h-5 text-white/20 group-hover:text-violet-400 transition-colors" />
-                      </div>
-                      <p className="text-xs text-white/25 group-hover:text-white/40 transition-colors">Upload cover image</p>
-                    </div>
-                  )}
-                </div>
-              </label>
-            </section>
-
-            {/* Audio Upload */}
-            <section>
-              <p className="text-[10px] font-semibold tracking-[0.12em] uppercase text-white/40 mb-2">Audio MP3</p>
-              <label className="block cursor-pointer group">
-                <input type="file" accept="audio/*" className="sr-only" onChange={handleAudioUpload} />
-                <div className={`p-3.5 rounded-xl border transition-all ${
-                  audioFile
-                    ? "border-violet-500/30 bg-violet-500/[0.06]"
-                    : "border-white/[0.08] bg-white/[0.03] group-hover:border-violet-500/30 group-hover:bg-violet-500/[0.04]"
-                }`}>
-                  <div className="flex items-center gap-3">
-                    <div className={`w-9 h-9 rounded-lg shrink-0 flex items-center justify-center ${
-                      audioFile ? "bg-violet-500/20" : "bg-white/[0.06] group-hover:bg-violet-500/10 transition-colors"
-                    }`}>
-                      <Music className={`w-4 h-4 ${audioFile ? "text-violet-400" : "text-white/25 group-hover:text-violet-400 transition-colors"}`} />
-                    </div>
-                    <div className="min-w-0">
-                      <p className={`text-sm font-medium truncate ${audioFile ? "text-white/80" : "text-white/30 group-hover:text-white/50 transition-colors"}`}>
-                        {audioFile ? audioFile.name : "Upload audio file"}
-                      </p>
-                      {audioFile && (
-                        <p className="text-xs text-white/30 mt-0.5">
-                          {(audioFile.size / 1024 / 1024).toFixed(1)} MB
-                          {isReady && <span className="ml-1 text-violet-400">· {formatTime(duration)}</span>}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </label>
-            </section>
-
-            {/* AI Transcribe Button */}
-            <section>
-              <p className="text-[10px] font-semibold tracking-[0.12em] uppercase text-white/40 mb-2">
-                Nhận diện lời bài hát (AI)
-              </p>
-
-              {/* Primary: full AI transcription (replaces text + timestamps) */}
-              <button
-                onClick={() => handleAiTranscribe(false)}
-                disabled={!audioFile || isTranscribing || isSyncing || isAnalyzing}
-                className="w-full h-11 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-all
-                  bg-gradient-to-r from-emerald-600 to-teal-600
-                  hover:from-emerald-500 hover:to-teal-500
-                  shadow-lg shadow-emerald-500/20
-                  disabled:opacity-30 disabled:cursor-not-allowed disabled:shadow-none"
-              >
-                {isTranscribing ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Đang nhận diện...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-4 h-4" />
-                    Nhận diện với Gemini AI
-                  </>
-                )}
-              </button>
-
-              {/* Secondary: sync timing to manually-typed lyrics */}
-              <button
-                onClick={() => handleAiTranscribe(false, true)}
-                disabled={!audioFile || isTranscribing || isSyncing || isAnalyzing}
-                className="mt-2 w-full h-9 rounded-xl font-semibold text-xs flex items-center justify-center gap-2 transition-all
-                  border border-violet-500/30 text-violet-300/80
-                  hover:bg-violet-500/10 hover:border-violet-500/60 hover:text-violet-200
-                  disabled:opacity-30 disabled:cursor-not-allowed"
-                title="Giữ nguyên lời nhập tay, chỉ lấy timestamps từ Gemini"
-              >
-                {isSyncing ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    Đang đồng bộ...
-                  </>
-                ) : (
-                  <>
-                    <span className="text-base leading-none">⇌</span>
-                    Đồng bộ timestamps với lời nhập tay
-                  </>
-                )}
-              </button>
-
-              {/* Status row */}
-              <div className="mt-1.5 flex items-center justify-between gap-2 min-h-[18px]">
-                {transcribeFromCache ? (
-                  <p className="text-[10px] text-emerald-400/80 flex items-center gap-1">
-                    <span>⚡</span> Dùng kết quả đã lưu
-                  </p>
-                ) : (
-                  <p className="text-[10px] text-white/20">
-                    Gemini tự nghe và trả về lời + timestamp
-                  </p>
-                )}
-                {/* Show "Nhận diện lại" whenever audio is loaded — not just after a cache hit */}
-                {audioFile && (lyricsLines.length > 0 || transcribeFromCache) && (
-                  <button
-                    onClick={() => handleAiTranscribe(true)}
-                    disabled={isTranscribing || isSyncing}
-                    className="text-[10px] text-white/30 hover:text-violet-400 underline underline-offset-2 transition-colors shrink-0 disabled:opacity-30"
-                  >
-                    Nhận diện lại
-                  </button>
-                )}
-              </div>
-
-              {transcribeError && (
-                <p className="text-[11px] text-red-400/80 leading-relaxed">{transcribeError}</p>
-              )}
-
-              {/* Collapsible Prompt editor */}
-              <div className="mt-2">
-                <button
-                  onClick={() => setShowPrompt((v) => !v)}
-                  className="flex items-center gap-1.5 text-[10px] text-white/25 hover:text-violet-400 transition-colors w-full group"
-                >
-                  <ChevronDown
-                    className="w-3 h-3 transition-transform duration-200"
-                    style={{ transform: showPrompt ? "rotate(180deg)" : "rotate(0deg)" }}
-                  />
-                  <span>Prompt gửi Gemini</span>
-                  {customPrompt.trim() !== DEFAULT_PROMPT.trim() && (
-                    <span className="ml-auto text-amber-400/70">đã tuỳ chỉnh</span>
-                  )}
-                </button>
-                {showPrompt && (
-                  <div className="mt-2 space-y-1.5">
-                    <textarea
-                      value={customPrompt}
-                      onChange={(e) => setCustomPrompt(e.target.value)}
-                      rows={10}
-                      spellCheck={false}
-                      className="w-full bg-white/[0.03] border border-white/[0.08] focus:border-violet-500/40 rounded-xl p-3 text-[11px] text-white/60 placeholder-white/20 resize-y outline-none transition-all font-mono leading-relaxed"
-                    />
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => setCustomPrompt(DEFAULT_PROMPT)}
-                        className="text-[10px] text-white/25 hover:text-white/50 transition-colors underline underline-offset-2"
-                      >
-                        Khôi phục mặc định
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </section>
-
-            {/* Divider */}
-            <div className="flex items-center gap-2">
-              <div className="flex-1 h-px bg-white/[0.06]" />
-              <span className="text-[10px] text-white/20">hoặc nhập thủ công</span>
-              <div className="flex-1 h-px bg-white/[0.06]" />
-            </div>
+        <aside className="w-[300px] shrink-0 border-r border-white/[0.06] flex flex-col bg-[#0d0d0d] overflow-hidden">
+          <div className="flex flex-col h-full p-4 gap-3">
 
             {/* Lyrics Input */}
-            <section>
+            <section className="flex-1 flex flex-col min-h-0">
               <div className="flex items-center justify-between mb-2">
                 <p className="text-[10px] font-semibold tracking-[0.12em] uppercase text-white/40">Lyrics</p>
                 {lineCount > 0 && <span className="text-[10px] text-white/30">{lineCount} dòng</span>}
@@ -1357,7 +1353,7 @@ export default function App() {
                 value={lyricsText}
                 onChange={(e) => setLyricsText(e.target.value)}
                 placeholder={"Nhập lyrics ở đây...\nMỗi dòng là một câu\nAuto Timeline sẽ tự xác định thời điểm"}
-                className="w-full h-36 bg-white/[0.03] border border-white/[0.08] focus:border-violet-500/40 rounded-xl p-4 text-sm text-white/70 placeholder-white/20 resize-none outline-none transition-all font-mono leading-relaxed"
+                className="flex-1 w-full min-h-0 bg-white/[0.03] border border-white/[0.08] focus:border-violet-500/40 rounded-xl p-4 text-sm text-white/70 placeholder-white/20 resize-none outline-none transition-all font-mono leading-relaxed"
               />
             </section>
 
@@ -1392,109 +1388,9 @@ export default function App() {
               </p>
             </div>
 
-            {/* Lyric style picker */}
-            <section>
-              <p className="text-[10px] font-semibold tracking-[0.12em] uppercase text-white/40 mb-2.5">
-                Màu chữ
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {LYRIC_STYLES.map((s) => (
-                  <button
-                    key={s.id}
-                    onClick={() => setLyricStyleId(s.id)}
-                    title={s.label}
-                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-all border ${
-                      lyricStyleId === s.id
-                        ? "border-white/30 bg-white/[0.1] text-white"
-                        : "border-white/[0.06] bg-white/[0.03] text-white/40 hover:text-white/70 hover:border-white/15"
-                    }`}
-                  >
-                    <span
-                      className="w-3 h-3 rounded-full shrink-0"
-                      style={{ background: s.dot }}
-                    />
-                    {s.label}
-                  </button>
-                ))}
-              </div>
-            </section>
-
-            {/* Lyric effect picker */}
-            <section>
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-white/30 mb-2">
-                Hiệu ứng chữ
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {LYRIC_EFFECTS.map((e) => (
-                  <button
-                    key={e.id}
-                    onClick={() => setLyricEffect(e.id)}
-                    className={`px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-all border ${
-                      lyricEffect === e.id
-                        ? "border-white/30 bg-white/[0.1] text-white"
-                        : "border-white/[0.06] bg-white/[0.03] text-white/40 hover:text-white/70 hover:border-white/15"
-                    }`}
-                  >
-                    {e.label}
-                  </button>
-                ))}
-              </div>
-            </section>
-
-            {/* Font size slider */}
-            <section>
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-[10px] font-semibold uppercase tracking-widest text-white/30">
-                  Cỡ chữ
-                </p>
-                <span className="text-[10px] font-mono text-violet-400/70">{lyricFontSize}%</span>
-              </div>
-              <input
-                type="range"
-                min={60}
-                max={180}
-                step={5}
-                value={lyricFontSize}
-                onChange={(e) => setLyricFontSize(Number(e.target.value))}
-                className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
-                style={{ accentColor: "#8B5CF6" }}
-              />
-              <div className="flex justify-between text-[9px] text-white/20 mt-1">
-                <span>60%</span><span>100%</span><span>180%</span>
-              </div>
-            </section>
-
-            {/* Pre-roll slider */}
-            <section>
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-[10px] font-semibold uppercase tracking-widest text-white/30">
-                  Hiện trước
-                </p>
-                <span className="text-[10px] font-mono text-amber-400/70">
-                  {prerollSeconds === 0 ? "tắt" : `${prerollSeconds.toFixed(1)}s`}
-                </span>
-              </div>
-              <input
-                type="range"
-                min={0}
-                max={3}
-                step={0.1}
-                value={prerollSeconds}
-                onChange={(e) => setPrerollSeconds(Number(e.target.value))}
-                className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
-                style={{ accentColor: "#F59E0B" }}
-              />
-              <div className="flex justify-between text-[9px] text-white/20 mt-1">
-                <span>tắt</span><span>1s</span><span>2s</span><span>3s</span>
-              </div>
-              <p className="text-[9px] text-white/20 mt-1.5 leading-relaxed">
-                Câu hát xuất hiện sớm hơn để người xem chuẩn bị
-              </p>
-            </section>
-
             {/* Timeline list */}
             {lyricsLines.length > 0 && (
-              <section>
+              <div className="flex flex-col min-h-0 shrink-0 max-h-[45%]">
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-[10px] font-semibold tracking-[0.12em] uppercase text-white/40">
                     Timeline — {lyricsLines.length} dòng
@@ -1695,17 +1591,18 @@ export default function App() {
                   <span className="text-emerald-400/50">giây</span> ·{" "}
                   <span className="text-teal-400/50">end</span> nhấn để sửa · ✏ lời · ✂ cắt · 🗑 xoá · Enter lưu · Esc huỷ
                 </p>
-              </section>
+              </div>
             )}
           </div>
         </aside>
 
         {/* ── RIGHT PANEL ────────────────────────────────────── */}
-        <main className="flex-1 flex flex-col items-center gap-5 px-8 py-6 overflow-y-auto">
+        <main className="flex-1 flex flex-col overflow-hidden bg-[#080808]">
 
-          {/* 16:9 Video Preview */}
-          <div className="w-full max-w-[800px]">
-            <div className="aspect-video rounded-2xl overflow-hidden relative shadow-2xl shadow-black/70 ring-1 ring-white/[0.06]">
+          {/* 16:9 Video Preview — flex-1, height-driven */}
+          <div className="flex-1 flex items-center justify-center px-6 pt-5 pb-2 min-h-0 overflow-hidden">
+          <div className="h-full aspect-video max-w-[900px] min-w-0">
+            <div className="w-full h-full rounded-2xl overflow-hidden relative shadow-2xl shadow-black/70 ring-1 ring-white/[0.06]">
               {coverImage ? (
                 <>
                   <img
@@ -1871,9 +1768,11 @@ export default function App() {
               )}
             </div>
           </div>
+          </div>
 
           {/* Audio Player */}
-          <div className="w-full max-w-[800px] bg-white/[0.04] border border-white/[0.07] rounded-2xl p-5">
+          <div className="px-6 pb-2 shrink-0">
+          <div className="max-w-[900px] mx-auto bg-white/[0.04] border border-white/[0.07] rounded-2xl p-5">
             {audioUrl ? (
               <div className="space-y-4">
                 <div ref={waveformRef} className="w-full rounded-lg overflow-hidden cursor-pointer" />
@@ -1918,59 +1817,10 @@ export default function App() {
                     </div>
                   )}
 
-                  {/* Export buttons — WebM (real-time) + MP4 (offline WebCodecs) */}
-                  <div className="shrink-0 flex gap-1.5">
-                    <button
-                      onClick={() => { setExportingFormat("webm"); handleExportVideo(); }}
-                      disabled={!isReady || lyricsLines.length === 0 || isExporting}
-                      title="Xuất WebM — realtime, hỗ trợ mọi trình duyệt"
-                      className="relative h-9 px-3 rounded-xl flex items-center gap-1.5 font-semibold text-xs transition-all
-                        border border-violet-500/40 text-violet-300
-                        hover:bg-violet-500/10 hover:border-violet-400/60
-                        disabled:opacity-30 disabled:cursor-not-allowed overflow-hidden"
-                    >
-                      {isExporting && exportingFormat === "webm" ? (
-                        <>
-                          <span className="absolute inset-0 bg-violet-500/20 origin-left" style={{ transform: `scaleX(${exportProgress})`, transition: "transform 0.4s linear" }} />
-                          <Loader2 className="w-3 h-3 animate-spin relative z-10" />
-                          <span className="relative z-10">{Math.round(exportProgress * 100)}%</span>
-                        </>
-                      ) : (
-                        <>
-                          <Download className="w-3 h-3" />
-                          WebM
-                        </>
-                      )}
-                    </button>
-
-                    <button
-                      onClick={handleExportVideoMp4}
-                      disabled={!isReady || lyricsLines.length === 0 || isExporting}
-                      title="Xuất MP4 — offline rendering, cần Chrome/Edge 94+"
-                      className="relative h-9 px-3 rounded-xl flex items-center gap-1.5 font-semibold text-xs transition-all
-                        bg-gradient-to-r from-fuchsia-600 to-violet-600
-                        hover:from-fuchsia-500 hover:to-violet-500
-                        shadow-md shadow-violet-500/25
-                        disabled:opacity-30 disabled:cursor-not-allowed disabled:shadow-none overflow-hidden"
-                    >
-                      {isExporting && exportingFormat === "mp4" ? (
-                        <>
-                          <span className="absolute inset-0 bg-white/15 origin-left" style={{ transform: `scaleX(${exportProgress})`, transition: "transform 0.4s linear" }} />
-                          <Loader2 className="w-3 h-3 animate-spin relative z-10" />
-                          <span className="relative z-10">{Math.round(exportProgress * 100)}%</span>
-                        </>
-                      ) : (
-                        <>
-                          <Download className="w-3 h-3" />
-                          MP4
-                        </>
-                      )}
-                    </button>
-                  </div>
                 </div>
               </div>
             ) : (
-              <div className="py-8 flex flex-col items-center gap-3 text-white/20">
+              <div className="py-6 flex flex-col items-center gap-3 text-white/20">
                 <div className="w-12 h-12 rounded-xl bg-white/[0.05] flex items-center justify-center">
                   <Upload className="w-5 h-5" />
                 </div>
@@ -1978,6 +1828,88 @@ export default function App() {
               </div>
             )}
           </div>
+          </div>
+
+          {/* ── STYLE BAR ─────────────────────────────────────── */}
+          <div className="px-6 pb-4 shrink-0">
+            <div className="max-w-[900px] mx-auto bg-white/[0.03] border border-white/[0.06] rounded-2xl px-5 py-3 flex items-center gap-4 flex-wrap">
+
+              {/* Colors */}
+              <div className="flex items-center gap-2.5">
+                <p className="text-[9px] font-semibold uppercase tracking-widest text-white/30 shrink-0">Màu</p>
+                <div className="flex flex-wrap gap-1">
+                  {LYRIC_STYLES.map((s) => (
+                    <button
+                      key={s.id}
+                      onClick={() => setLyricStyleId(s.id)}
+                      title={s.label}
+                      className={`flex items-center gap-1 px-1.5 py-1 rounded-lg text-[9px] font-medium transition-all border ${
+                        lyricStyleId === s.id
+                          ? "border-white/30 bg-white/[0.1] text-white"
+                          : "border-white/[0.06] bg-white/[0.03] text-white/40 hover:text-white/70 hover:border-white/15"
+                      }`}
+                    >
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: s.dot }} />
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="h-5 w-px bg-white/[0.06] shrink-0" />
+
+              {/* Effects */}
+              <div className="flex items-center gap-2.5">
+                <p className="text-[9px] font-semibold uppercase tracking-widest text-white/30 shrink-0">Hiệu ứng</p>
+                <div className="flex flex-wrap gap-1">
+                  {LYRIC_EFFECTS.map((e) => (
+                    <button
+                      key={e.id}
+                      onClick={() => setLyricEffect(e.id)}
+                      className={`px-2 py-1 rounded-lg text-[9px] font-medium transition-all border ${
+                        lyricEffect === e.id
+                          ? "border-white/30 bg-white/[0.1] text-white"
+                          : "border-white/[0.06] bg-white/[0.03] text-white/40 hover:text-white/70 hover:border-white/15"
+                      }`}
+                    >
+                      {e.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="h-5 w-px bg-white/[0.06] shrink-0" />
+
+              {/* Font size */}
+              <div className="flex items-center gap-2">
+                <p className="text-[9px] font-semibold uppercase tracking-widest text-white/30 shrink-0">Cỡ chữ</p>
+                <input
+                  type="range" min={60} max={180} step={5} value={lyricFontSize}
+                  onChange={(e) => setLyricFontSize(Number(e.target.value))}
+                  className="w-24 h-1.5 rounded-full appearance-none cursor-pointer"
+                  style={{ accentColor: "#8B5CF6" }}
+                />
+                <span className="text-[9px] font-mono text-violet-400/70 w-8 shrink-0">{lyricFontSize}%</span>
+              </div>
+
+              <div className="h-5 w-px bg-white/[0.06] shrink-0" />
+
+              {/* Pre-roll */}
+              <div className="flex items-center gap-2">
+                <p className="text-[9px] font-semibold uppercase tracking-widest text-white/30 shrink-0">Hiện trước</p>
+                <input
+                  type="range" min={0} max={3} step={0.1} value={prerollSeconds}
+                  onChange={(e) => setPrerollSeconds(Number(e.target.value))}
+                  className="w-20 h-1.5 rounded-full appearance-none cursor-pointer"
+                  style={{ accentColor: "#F59E0B" }}
+                />
+                <span className="text-[9px] font-mono text-amber-400/70 w-8 shrink-0">
+                  {prerollSeconds === 0 ? "tắt" : `${prerollSeconds.toFixed(1)}s`}
+                </span>
+              </div>
+            </div>
+          </div>
+
         </main>
       </div>
     </div>
