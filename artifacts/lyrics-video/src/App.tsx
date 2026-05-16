@@ -852,6 +852,16 @@ export default function App() {
     setLyricsText(newLines.map((l) => l.text).join("\n"));
   };
 
+  const handleClearCache = () => {
+    const toDelete: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key?.startsWith("lvg_transcribe_")) toDelete.push(key);
+    }
+    toDelete.forEach((k) => localStorage.removeItem(k));
+    setTranscribeFromCache(false);
+  };
+
   // Canvas color map — one entry per lyric style id
   const CANVAS_COLORS: Record<LyricStyleId, { fill: string; glow: string }> = {
     purple: { fill: "#F2EEFF", glow: "rgba(150,110,255,0.85)" },
@@ -1418,7 +1428,7 @@ export default function App() {
                 value={lyricsText}
                 onChange={(e) => setLyricsText(e.target.value)}
                 rows={6}
-                placeholder={"Nhập lyrics ở đây...\nMỗi dòng là một câu\nAuto Timeline sẽ tự xác định thời điểm"}
+                placeholder={"Nhập lyrics ở đây...\nMỗi dòng là một câu\nDùng Nhận diện AI để gán thời gian"}
                 className="w-full bg-white/[0.03] border border-white/[0.08] focus:border-violet-500/40 rounded-xl p-3 text-[11px] text-white/60 placeholder-white/20 resize-none outline-none transition-all font-mono leading-relaxed"
               />
             </div>
@@ -1450,37 +1460,6 @@ export default function App() {
         {/* ── LEFT PANEL ─────────────────────────────────────── */}
         <aside className="w-[300px] shrink-0 border-r border-white/[0.06] flex flex-col bg-[#0d0d0d] overflow-hidden">
           <div className="flex flex-col h-full p-4 gap-3">
-
-            {/* Auto Timeline Button */}
-            <div className="space-y-2">
-              <button
-                onClick={handleAutoTimeline}
-                disabled={!isReady || !lyricsText.trim() || isAnalyzing}
-                className="w-full h-11 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-all
-                  bg-gradient-to-r from-violet-600 to-fuchsia-600
-                  hover:from-violet-500 hover:to-fuchsia-500
-                  shadow-lg shadow-violet-500/20
-                  disabled:opacity-30 disabled:cursor-not-allowed disabled:shadow-none"
-              >
-                {isAnalyzing ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Đang phân tích âm thanh...
-                  </>
-                ) : (
-                  <>
-                    <Wand2 className="w-4 h-4" />
-                    Auto Timeline
-                  </>
-                )}
-              </button>
-
-              {/* Method explanation */}
-              <p className="text-[10px] text-white/25 text-center leading-relaxed">
-                Phân tích âm thanh và cập nhật timeline theo lời đã nhập ở trên.<br />
-                Nhập xong lyrics → nhấn để gán thời gian tự động.
-              </p>
-            </div>
 
             {/* Timeline list */}
             {lyricsLines.length > 0 && (
@@ -1685,6 +1664,20 @@ export default function App() {
                   <span className="text-emerald-400/50">giây</span> ·{" "}
                   <span className="text-teal-400/50">end</span> nhấn để sửa · ✏ lời · ✂ cắt · 🗑 xoá · Enter lưu · Esc huỷ
                 </p>
+              </div>
+            )}
+
+            {/* Clear transcription cache */}
+            {audioFile && (
+              <div className="mt-auto pt-2 border-t border-white/[0.05]">
+                <button
+                  onClick={handleClearCache}
+                  className="w-full flex items-center justify-center gap-1.5 text-[10px] text-white/25 hover:text-red-400/70 transition-colors py-1.5 rounded-lg hover:bg-red-500/[0.06]"
+                  title="Xóa cache nhận diện AI để gọi lại API khi bấm Nhận diện AI"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  Xóa Cache AI
+                </button>
               </div>
             )}
           </div>
