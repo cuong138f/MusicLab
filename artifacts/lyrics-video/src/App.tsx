@@ -789,50 +789,7 @@ export default function App() {
     }
   };
 
-  // Downsample WAV to 16 kHz mono before sending to AI.
-  // 16 kHz mono is the standard for speech/lyrics recognition — perfectly sufficient
-  // for Gemini. A 44.1 kHz stereo WAV shrinks ~90% this way.
-  const downsampleWavFile = async (file: File): Promise<File> => {
-    const TARGET_SR = 16_000;
-    const arrayBuf = await file.arrayBuffer();
-    const ctx = new AudioContext();
-    let audioBuf: AudioBuffer;
-    try {
-      audioBuf = await ctx.decodeAudioData(arrayBuf);
-    } finally {
-      await ctx.close();
-    }
-    // Already small enough — skip
-    if (audioBuf.sampleRate <= TARGET_SR && audioBuf.numberOfChannels === 1) return file;
-
-    // Resample + mix down to mono via OfflineAudioContext
-    const targetLen = Math.ceil(audioBuf.duration * TARGET_SR);
-    const offCtx = new OfflineAudioContext(1, targetLen, TARGET_SR);
-    const src = offCtx.createBufferSource();
-    src.buffer = audioBuf;
-    src.connect(offCtx.destination);
-    src.start();
-    const resampled = await offCtx.startRendering();
-    const pcm = resampled.getChannelData(0);
-
-    // Encode as minimal 16-bit PCM WAV
-    const buf = new ArrayBuffer(44 + pcm.length * 2);
-    const v = new DataView(buf);
-    const w = (o: number, s: string) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
-    w(0, "RIFF"); v.setUint32(4, 36 + pcm.length * 2, true);
-    w(8, "WAVE"); w(12, "fmt ");
-    v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
-    v.setUint32(24, TARGET_SR, true); v.setUint32(28, TARGET_SR * 2, true);
-    v.setUint16(32, 2, true); v.setUint16(34, 16, true);
-    w(36, "data"); v.setUint32(40, pcm.length * 2, true);
-    for (let i = 0; i < pcm.length; i++)
-      v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, pcm[i])) * 0x7fff, true);
-
-    const compressed = new File([buf], file.name.replace(/\.wav$/i, "_16k.wav"), { type: "audio/wav" });
-    return compressed;
-  };
-
-  // Decode audio → 16 kHz mono, slice into numParts equal PCM segments, encode each as WAV.
+  // Decode audio → 16 kHz mono PCM, slice at cutPointsSecs, encode each segment as WAV.
   // Returns [{file, offset}] where offset is the start time (seconds) of each part.
   // cutPointsSecs: sorted list of cut times in seconds, e.g. [90, 180] → 3 segments
   const splitDecodeAudio = async (
@@ -1023,14 +980,9 @@ export default function App() {
         return;
       }
 
-      // Compress WAV before upload: downsample to 16 kHz mono (~90% size reduction)
-      const fileToSend = /\.wav$/i.test(audioFile.name) || audioFile.type === "audio/wav"
-        ? await downsampleWavFile(audioFile)
-        : audioFile;
-
-      // Send audio as multipart/form-data (binary — smaller than base64, avoids proxy 413)
+      // Send audio as multipart/form-data
       const form = new FormData();
-      form.append("audio", fileToSend, fileToSend.name);
+      form.append("audio", audioFile, audioFile.name);
       if (useSyncMode) {
         form.append("knownLyrics", JSON.stringify(lyricOnlyLines));
       } else {
@@ -1081,14 +1033,11 @@ export default function App() {
     setIsFixing(true);
     setFixError(null);
     try {
-      const fileToSend = /\.wav$/i.test(audioFile.name) || audioFile.type === "audio/wav"
-        ? await downsampleWavFile(audioFile)
-        : audioFile;
       const currentLines = lyricsLines
         .filter((l) => !l.isMarker)
         .map((l) => ({ text: l.text, start: l.start, end: l.end }));
       const form = new FormData();
-      form.append("audio", fileToSend, fileToSend.name);
+      form.append("audio", audioFile, audioFile.name);
       form.append("currentLyrics", JSON.stringify(currentLines));
       form.append("fixRequest", fixRequest.trim());
       const res = await fetch("/api/transcribe-audio", { method: "POST", body: form });
