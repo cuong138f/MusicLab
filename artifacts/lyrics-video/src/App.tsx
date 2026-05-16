@@ -1004,17 +1004,21 @@ export default function App() {
     const W = 1280, H = 720, FPS = 30;
     const CODEC_VIDEO = "avc1.42E01E"; // H.264 Baseline 3.0 — widest support
 
-    // Check codec is actually supported before starting
+    // Check codec support — non-blocking: sandbox/iframe may report false even if encoding works
     try {
-      const { supported } = await VideoEncoder.isConfigSupported({
+      const sw = await VideoEncoder.isConfigSupported({
+        codec: CODEC_VIDEO, width: W, height: H, bitrate: 6_000_000, framerate: FPS,
+        hardwareAcceleration: "prefer-software",
+      });
+      const hw = await VideoEncoder.isConfigSupported({
         codec: CODEC_VIDEO, width: W, height: H, bitrate: 6_000_000, framerate: FPS,
       });
-      if (!supported) {
-        setExportError("Codec H.264 không được hỗ trợ trên trình duyệt này. Hãy dùng WebM.");
+      if (!sw.supported && !hw.supported) {
+        setExportError("H.264 không được hỗ trợ trên trình duyệt này. Hãy dùng WebM.");
         return;
       }
     } catch {
-      // isConfigSupported may not exist in early WebCodecs — proceed and let encode fail gracefully
+      // isConfigSupported may throw in early WebCodecs — proceed anyway
     }
 
     setExportingFormat("mp4");
@@ -1064,6 +1068,7 @@ export default function App() {
         bitrate: 6_000_000,
         framerate: FPS,
         latencyMode: "quality",
+        hardwareAcceleration: "prefer-software",
       });
 
       // Audio: decode + encode before video frames
