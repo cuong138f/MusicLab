@@ -22,31 +22,98 @@ function normalizeMimeType(raw: string): { mimeType: string; ext: string } {
   return { mimeType: "audio/mp3", ext: "mp3" };
 }
 
-const PROMPT = `
-Bạn là chuyên gia phiên âm lời bài hát. Lắng nghe TOÀN BỘ audio từ đầu đến cuối, xuất tất cả dòng lời với timestamp chính xác.
+const PROMPT = `You are an expert music lyrics transcription assistant.
 
-OUTPUT: Chỉ mảng JSON thuần — không markdown, không code block, không giải thích.
-[{ "text": "dòng lời", "start": 12.3, "end": 14.8 }, ...]
+Your task is to listen to the ENTIRE audio file continuously from 0:00 until the final second and produce a complete timestamped transcript of ALL sung vocals.
 
-TIMESTAMP:
-• "start" = giây khi giọng ca BẮT ĐẦU dòng này
-• "end" = giây khi giọng ca NGỪNG HẲN tại âm tiết cuối (không phải lúc dòng kế bắt đầu)
-• Số thập phân 1 chữ số  •  "end" > "start"  •  thường 1.5–8 giây/dòng
-• Tăng dần: "start"[n] > "end"[n-1] — không chồng chéo
-• Không vượt tổng thời lượng file
+OUTPUT FORMAT:
+Return ONLY a valid JSON array.
+No markdown.
+No explanations.
+No comments.
 
-NỘI DUNG:
-• Ghi TẤT CẢ: verse, chorus, bridge, hook, ad-lib, backing vocal có lời riêng
-• Đoạn lặp (chorus/hook hát nhiều lần): mỗi lần hát = 1 entry riêng với timestamp riêng
-• Bỏ qua chỉ đoạn hoàn toàn không lời (nhạc thuần, solo nhạc cụ)
-• Phiên âm đúng âm thanh nghe được — không tự thêm hay bịa lời
-• Một dòng = một câu nhạc / một hơi thở; nếu > 8 giây thì cắt tại điểm ngắt tự nhiên
+Each item:
+{
+"text": "<exact sung lyric>",
+"start": <seconds>,
+"end": <seconds>
+}
 
-ĐẦY ĐỦ: Bài hát thường 30–60+ dòng — xuất toàn bộ, không dừng giữa chừng. Dòng cuối phải có "start" nằm trong 60 giây cuối file.
-• Không để khoảng trống > 20 giây giữa hai dòng lời liên tiếp, trừ khi đoạn đó thực sự hoàn toàn không có lời
+TIMESTAMP RULES:
 
-Xuất mảng JSON:
-`.trim();
+* Use seconds with 1 decimal precision
+* "start" = exact moment the vocal begins
+* "end" = exact moment the vocal fully stops
+* NEVER use the next line's timestamp as the previous line's end
+* Every line duration should usually be between 1.0 and 7.0 seconds
+* NEVER exceed 10 seconds for one line
+* Split long phrases naturally at breaths
+
+CRITICAL AUDIO SCANNING RULES:
+
+1. PROCESS AUDIO SEQUENTIALLY
+   You MUST scan the audio in chronological order without skipping ahead.
+   Move second-by-second through the song from beginning to end.
+
+2. NEVER JUMP ACROSS INSTRUMENTALS
+   If there is an instrumental section:
+
+* DO NOT skip forward blindly
+* Continue monitoring the audio during the instrumental
+* Detect the EXACT timestamp where vocals return
+* Resume transcription immediately when singing starts again
+
+3. FORBIDDEN BEHAVIOR
+   DO NOT:
+
+* jump from one vocal section to another
+* assume the song ended
+* skip silent gaps
+* skip musical breaks
+* stop after finding repeated choruses
+
+4. VOCAL RE-ENTRY DETECTION
+   During instrumental sections:
+
+* continuously listen for re-entry of vocals
+* detect humming, soft vocals, adlibs, harmonies, layered vocals
+* the moment vocals return, create a new lyric entry immediately
+
+5. REPEATED LYRICS
+   If lyrics repeat later:
+
+* include them AGAIN with completely new timestamps
+* NEVER reuse timestamps from earlier choruses
+
+6. MONOTONIC TIMESTAMPS
+   Every new line must satisfy:
+   new.start > previous.end
+
+No overlaps.
+No duplicate timestamps.
+
+7. DO NOT TRUNCATE
+   The transcript must continue until the actual end of the audio file.
+   Do not stop early even if structure repeats.
+
+8. FINAL VALIDATION BEFORE OUTPUT
+   Before generating JSON:
+
+* confirm the last lyric timestamp occurs near the actual end of the song
+* confirm no large unexplained timestamp gaps exist
+* if a gap exceeds 20 seconds, verify it is truly instrumental
+* verify repeated choruses are all included
+* verify timestamps remain chronological
+
+9. UNCLEAR VOCALS
+   If a lyric is difficult to hear:
+
+* transcribe the closest phonetic approximation
+* NEVER leave text empty
+* NEVER omit a vocal line
+
+REFERENCE LYRICS (for alignment only — actual audio takes priority):
+[PASTE OFFICIAL LYRICS HERE]`.trim();
 
 const SYNC_PROMPT = (lyrics: string[]) =>
   `Bạn là chuyên gia đồng bộ lời bài hát. Nghe audio và tìm timestamp chính xác cho ${lyrics.length} dòng lời dưới đây.
@@ -166,12 +233,27 @@ router.post("/transcribe-audio", upload.single("audio"), async (req, res) => {
     ? SYNC_PROMPT(validKnownLyrics)
     : (customPrompt?.trim()) || PROMPT;
 
+  // Inject hintLyrics into prompt: replace [PASTE OFFICIAL LYRICS HERE] if present, else append
+  const injectHint = (prompt: string, hints: string[]): string => {
+    const lines = hints.map((l, i) => `${i + 1}. ${l}`).join("\n");
+    if (prompt.includes("[PASTE OFFICIAL LYRICS HERE]")) {
+      return prompt.replace("[PASTE OFFICIAL LYRICS HERE]", lines);
+    }
+    return `${prompt}\n\nREFERENCE LYRICS (for spelling/diacritics — actual audio takes priority):\n${lines}`;
+  };
+
+  // Remove the placeholder when no hint is provided
+  const cleanPrompt = (prompt: string): string =>
+    prompt.includes("[PASTE OFFICIAL LYRICS HERE]")
+      ? prompt.replace(/\nREFERENCE LYRICS[^\n]*\n\[PASTE OFFICIAL LYRICS HERE\]/, "").trimEnd()
+      : prompt;
+
   // Priority: fix-request > hint > base
   const activePrompt = validFixRequest && validCurrentLyrics
     ? buildFixPrompt(validCurrentLyrics, validFixRequest)
     : validHintLyrics
-      ? `${basePrompt}\n\nGỢI Ý CHÍNH TẢ (${validHintLyrics.length} dòng — ưu tiên dùng đúng dấu thanh tiếng Việt theo danh sách này):\n${validHintLyrics.map((l, i) => `${i + 1}. ${l}`).join("\n")}\n\nDùng danh sách trên để viết đúng chính tả. Timestamp vẫn phải tự xác định từ audio.`
-      : basePrompt;
+      ? injectHint(basePrompt, validHintLyrics)
+      : cleanPrompt(basePrompt);
 
   req.log.info(
     { rawMimeType, mimeType, bytes: audioBuffer.byteLength, syncMode: !!validKnownLyrics, hasHint: !!validHintLyrics, fixMode: !!validFixRequest, usingCustomPrompt: !!customPrompt?.trim() },
