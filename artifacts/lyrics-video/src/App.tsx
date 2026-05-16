@@ -2004,11 +2004,6 @@ export default function App() {
                           />
                         ))}
                       </div>
-                      {lyricsLines[0] && (
-                        <p className="text-[11px] text-white/25 font-mono">
-                          lời bắt đầu lúc {formatTime(lyricsLines[0].start)}
-                        </p>
-                      )}
                     </div>
                   )
                 ) : (
