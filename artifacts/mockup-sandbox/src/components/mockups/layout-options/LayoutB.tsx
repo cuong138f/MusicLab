@@ -11,6 +11,12 @@ export function LayoutB() {
         </div>
         {/* Tool bar */}
         <div className="flex items-center gap-3 px-5 py-2.5">
+          {/* Lyrics + Prompt dropdowns */}
+          <button className="text-[9px] text-violet-400 flex items-center gap-1">▾ Lyrics <span className="w-1.5 h-1.5 rounded-full bg-violet-400 ml-0.5" /></button>
+          <button className="text-[9px] text-white/20 hover:text-violet-400 flex items-center gap-1">▾ Prompt</button>
+
+          <div className="h-6 w-px bg-white/[0.08] mx-1" />
+
           {/* Cover thumbnail */}
           <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-white/[0.08] bg-white/[0.03] cursor-pointer hover:border-violet-500/30 group">
             <div className="w-10 h-[22px] rounded bg-white/[0.06] flex items-center justify-center text-[10px]">🖼</div>
@@ -32,7 +38,6 @@ export function LayoutB() {
           <button className="h-8 px-3 rounded-xl border border-violet-500/30 text-violet-300/80 text-[10px] flex items-center gap-1.5">
             ⇌ Đồng bộ
           </button>
-          <button className="text-[9px] text-white/20 hover:text-violet-400 flex items-center gap-1">▾ Prompt</button>
 
           <div className="flex-1" />
 
@@ -42,27 +47,28 @@ export function LayoutB() {
             <button className="h-8 px-3 rounded-xl bg-gradient-to-r from-fuchsia-600 to-violet-600 text-white text-[10px] font-semibold">↓ MP4</button>
           </div>
         </div>
-      </header>
 
-      <div className="flex flex-1 overflow-hidden">
-        {/* ── COL LEFT: Lyrics + Timeline ─────────────── */}
-        <aside className="w-[300px] shrink-0 border-r border-white/[0.06] bg-[#0d0d0d] flex flex-col overflow-hidden">
-          <div className="p-4 flex flex-col gap-3 h-full">
-            {/* Lyrics textarea — big, no space wasted */}
+        {/* Collapsible Lyrics panel (open) */}
+        <div className="px-5 py-3 border-t border-white/[0.06] flex gap-4">
+          <div className="flex flex-col gap-1.5 flex-1 min-w-0">
             <div className="flex items-center justify-between">
-              <p className="text-[9px] font-semibold tracking-[0.12em] uppercase text-white/30">Lyrics</p>
+              <span className="text-[9px] font-semibold tracking-[0.12em] uppercase text-white/40">Lyrics</span>
               <span className="text-[9px] text-white/25">12 dòng</span>
             </div>
             <textarea
               readOnly
-              value={"Em ơi Hà Nội phố\nTa còn em mùi hoàng lan\nTa còn em mùi hoa sữa\nCon đường vắng rì rào cơn mưa nhỏ\nAi đó chờ ai tóc xõa vai mềm\n...\n"}
-              className="flex-1 bg-white/[0.03] border border-white/[0.08] rounded-xl p-3 text-[10px] text-white/50 resize-none outline-none font-mono leading-relaxed"
+              value={"Em ơi Hà Nội phố\nTa còn em mùi hoàng lan\nTa còn em mùi hoa sữa\nCon đường vắng rì rào cơn mưa nhỏ\n..."}
+              rows={4}
+              className="w-full bg-white/[0.03] border border-white/[0.08] rounded-xl p-3 text-[10px] text-white/50 resize-none outline-none font-mono leading-relaxed"
             />
-            {/* Auto Timeline button */}
-            <button className="w-full h-10 rounded-xl bg-gradient-to-r from-violet-600 to-fuchsia-600 text-xs font-semibold flex items-center justify-center gap-1.5">
-              ✦ Auto Timeline
-            </button>
+          </div>
+        </div>
+      </header>
 
+      <div className="flex flex-1 overflow-hidden">
+        {/* ── COL LEFT: Timeline only ───────────────────── */}
+        <aside className="w-[300px] shrink-0 border-r border-white/[0.06] bg-[#0d0d0d] flex flex-col overflow-hidden">
+          <div className="p-4 flex flex-col gap-3 h-full">
             {/* Timeline list */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
@@ -72,8 +78,8 @@ export function LayoutB() {
                   <button className="text-[9px] text-white/25">↓ Export</button>
                 </div>
               </div>
-              <div className="space-y-0.5 max-h-32 overflow-y-auto rounded-xl border border-white/[0.06] bg-white/[0.02] p-1">
-                {["00:05 — Em ơi Hà Nội phố", "00:12 — Ta còn em mùi hoàng lan", "00:19 — Ta còn em mùi hoa sữa", "00:26 — Con đường vắng rì rào"].map((l,i) => (
+              <div className="space-y-0.5 max-h-full overflow-y-auto rounded-xl border border-white/[0.06] bg-white/[0.02] p-1">
+                {["00:05 — Em ơi Hà Nội phố", "00:12 — Ta còn em mùi hoàng lan", "00:19 — Ta còn em mùi hoa sữa", "00:26 — Con đường vắng rì rào", "00:33 — Ai đó chờ ai tóc xõa vai mềm", "00:40 — Mùa thu qua bao nhiêu lần"].map((l,i) => (
                   <div key={i} className={`px-2 py-1.5 rounded-lg ${i===1?"bg-violet-500/15 border border-violet-500/30":""}`}>
                     <p className={`text-[9px] font-mono truncate ${i===1?"text-violet-300":"text-white/40"}`}>{l}</p>
                   </div>
@@ -111,10 +117,6 @@ export function LayoutB() {
                   <p className="text-xs font-medium text-white/70">bai-hat-01.mp3</p>
                   <p className="text-[10px] text-white/30 font-mono">0:32 / 3:45 · dòng 3/12</p>
                 </div>
-                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-violet-500/10 border border-violet-500/20">
-                  <div className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
-                  <span className="text-[9px] text-violet-300">Syncing</span>
-                </div>
               </div>
             </div>
           </div>
@@ -150,16 +152,6 @@ export function LayoutB() {
                   <div className="absolute top-1/2 -translate-y-1/2 left-1/3 w-3 h-3 rounded-full bg-violet-400 -translate-x-1.5" />
                 </div>
                 <span className="text-[9px] font-mono text-violet-400/70">100%</span>
-              </div>
-              <div className="h-5 w-px bg-white/[0.06]" />
-              {/* Pre-roll */}
-              <div className="flex items-center gap-2">
-                <p className="text-[9px] font-semibold uppercase tracking-widest text-white/30 shrink-0">Hiện trước</p>
-                <div className="w-20 h-1.5 rounded-full bg-white/[0.08] relative">
-                  <div className="absolute left-0 top-0 h-full w-1/4 rounded-full bg-amber-500" />
-                  <div className="absolute top-1/2 -translate-y-1/2 left-1/4 w-3 h-3 rounded-full bg-amber-400 -translate-x-1.5" />
-                </div>
-                <span className="text-[9px] font-mono text-amber-400/70">1.0s</span>
               </div>
             </div>
           </div>

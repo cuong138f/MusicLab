@@ -293,139 +293,6 @@ function drawLyricFrame(
   ctx.restore();
 }
 
-/**
- * Analyze audio file and return N best cut points (in seconds):
- *   cuts[0]       = intro end   → first lyric starts here
- *   cuts[1..N-1]  = inter-lyric boundaries
- *
- * This ensures lyrics never appear before the intro ends.
- */
-async function findBestCutPoints(file: File, numCuts: number): Promise<number[]> {
-  if (numCuts <= 0) return [];
-
-  const arrayBuffer = await file.arrayBuffer();
-  const audioCtx = new AudioContext();
-  let buffer: AudioBuffer;
-  try {
-    buffer = await audioCtx.decodeAudioData(arrayBuffer);
-  } finally {
-    audioCtx.close();
-  }
-
-  const data = buffer.getChannelData(0);
-  const sr = buffer.sampleRate;
-  const totalDuration = buffer.duration;
-  const hopMs = 50; // 50ms frames
-  const hopSamples = Math.floor((sr * hopMs) / 1000);
-  const frames = Math.floor(data.length / hopSamples);
-
-  // 1. Compute RMS energy per frame
-  const energy = new Float32Array(frames);
-  for (let f = 0; f < frames; f++) {
-    let sum = 0;
-    const start = f * hopSamples;
-    const end = Math.min(start + hopSamples, data.length);
-    for (let i = start; i < end; i++) sum += data[i] * data[i];
-    energy[f] = Math.sqrt(sum / (end - start));
-  }
-
-  // 2. Smooth with a 300ms moving average
-  const smoothWin = Math.max(1, Math.round(300 / hopMs));
-  const smoothed = new Float32Array(frames);
-  let runSum = 0;
-  for (let i = 0; i < Math.min(smoothWin, frames); i++) runSum += energy[i];
-  for (let f = 0; f < frames; f++) {
-    const lo = f - Math.floor(smoothWin / 2);
-    const hi = lo + smoothWin;
-    if (f > 0) {
-      if (lo - 1 >= 0) runSum -= energy[lo - 1];
-      if (hi - 1 < frames) runSum += energy[hi - 1];
-    }
-    smoothed[f] = runSum / smoothWin;
-  }
-
-  // 3. Find local minima — no guard at the start so we can detect the intro end
-  //    (allow from frame 1 so even an early dip counts as intro boundary)
-  const contextFrames = Math.max(3, Math.round(400 / hopMs)); // 400ms context
-  const endGuard = Math.floor(frames * 0.03);
-
-  const minima: { frame: number; score: number }[] = [];
-  for (let f = contextFrames; f < frames - endGuard - contextFrames; f++) {
-    let isMin = true;
-    for (let d = 1; d <= contextFrames; d++) {
-      if (smoothed[f] > smoothed[f - d] || smoothed[f] > smoothed[f + d]) {
-        isMin = false;
-        break;
-      }
-    }
-    if (!isMin) continue;
-
-    const leftPeak = Math.max(...Array.from(smoothed.slice(Math.max(0, f - contextFrames * 3), f)));
-    const rightPeak = Math.max(...Array.from(smoothed.slice(f + 1, Math.min(frames, f + contextFrames * 3 + 1))));
-    const surroundPeak = Math.max(leftPeak, rightPeak);
-    if (surroundPeak === 0) continue;
-
-    const score = 1 - smoothed[f] / surroundPeak;
-    if (score > 0.05) minima.push({ frame: f, score });
-  }
-
-  // 4. Also detect the audio onset — the first frame where sustained energy rises
-  //    above the noise floor. This anchors the intro-end search.
-  const sorted10 = Array.from(smoothed).sort((a, b) => a - b);
-  const noiseFloor = sorted10[Math.floor(frames * 0.1)];
-  const maxE = sorted10[frames - 1];
-  const onsetThresh = noiseFloor + (maxE - noiseFloor) * 0.15;
-  const sustainFrames = Math.round(400 / hopMs);
-  let audioOnsetFrame = 0;
-  for (let f = 0; f < frames - sustainFrames; f++) {
-    if (smoothed[f] >= onsetThresh) {
-      let ok = true;
-      for (let d = 1; d < sustainFrames; d++) {
-        if (smoothed[f + d] < onsetThresh * 0.4) { ok = false; break; }
-      }
-      if (ok) { audioOnsetFrame = f; break; }
-    }
-  }
-
-  // 5. Cluster-aware selection
-  minima.sort((a, b) => b.score - a.score);
-  const minGapFrames = Math.round(1000 / hopMs); // min 1s between cuts
-
-  const selected: { frame: number; score: number }[] = [];
-  for (const m of minima) {
-    if (selected.length >= numCuts) break;
-    const tooClose = selected.some((s) => Math.abs(s.frame - m.frame) < minGapFrames);
-    if (!tooClose) selected.push(m);
-  }
-
-  // 6. Fill missing cuts with even spacing
-  if (selected.length < numCuts) {
-    const evenStep = totalDuration / (numCuts + 1);
-    for (let i = 1; selected.length < numCuts; i++) {
-      const t = i * evenStep;
-      const frame = Math.round((t / totalDuration) * frames);
-      const tooClose = selected.some(
-        (s) => Math.abs((s.frame / frames) * totalDuration - t) < 1.0
-      );
-      if (!tooClose) selected.push({ frame, score: 0 });
-    }
-  }
-
-  selected.sort((a, b) => a.frame - b.frame);
-  const times = selected.map((s) => (s.frame / frames) * totalDuration);
-
-  // 7. Ensure cuts[0] (intro end) is at or after the audio onset.
-  //    If the first detected cut is before the onset, replace it with the onset time.
-  const onsetTime = (audioOnsetFrame / frames) * totalDuration;
-  if (times.length > 0 && times[0] < onsetTime) {
-    times[0] = onsetTime;
-    // Re-sort in case this pushed it past times[1]
-    times.sort((a, b) => a - b);
-  }
-
-  return times;
-}
-
 // ─── Lyric effect presets ───────────────────────────────────────────────────
 const LYRIC_EFFECTS = [
   { id: "wipe",     label: "Xóa trái→phải" },
@@ -571,7 +438,7 @@ export default function App() {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isReady, setIsReady] = useState(false);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
+
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [transcribeError, setTranscribeError] = useState<string | null>(null);
   const [transcribeFromCache, setTranscribeFromCache] = useState(false);
@@ -771,39 +638,6 @@ export default function App() {
       }
     }
     return result;
-  };
-
-  const handleAutoTimeline = async () => {
-    if (!audioFile || !duration || !lyricsText.trim()) return;
-
-    const allInputLines = lyricsText.split("\n").map((l) => l.trim()).filter(Boolean);
-    const lines = allInputLines.filter((l) => !isSectionMarker(l));
-    if (!lines.length) return;
-
-    setIsAnalyzing(true);
-    setLyricsLines([]);
-
-    try {
-      const cuts = await findBestCutPoints(audioFile, lines.length);
-      const boundaries = [...cuts, duration];
-      const timedLyrics = lines.map((text, i) => ({
-        text,
-        start: boundaries[i],
-        end: boundaries[i + 1] ?? duration,
-      }));
-      setLyricsLines(reinsertMarkers(allInputLines, timedLyrics));
-    } catch {
-      const introEnd = duration * 0.1;
-      const step = (duration - introEnd) / lines.length;
-      const timedLyrics = lines.map((text, i) => ({
-        text,
-        start: introEnd + i * step,
-        end: introEnd + (i + 1) * step,
-      }));
-      setLyricsLines(reinsertMarkers(allInputLines, timedLyrics));
-    } finally {
-      setIsAnalyzing(false);
-    }
   };
 
   // Decode audio → 16 kHz mono PCM, slice at cutPointsSecs, encode each segment as WAV.
@@ -1754,7 +1588,7 @@ export default function App() {
         {/* AI transcribe */}
         <button
           onClick={() => handleAiTranscribe(false)}
-          disabled={!audioFile || isTranscribing || isSyncing || isAnalyzing}
+          disabled={!audioFile || isTranscribing || isSyncing}
           className="h-[38px] px-4 rounded-lg font-semibold text-xs flex items-center gap-1.5 transition-all shrink-0
             bg-gradient-to-r from-emerald-600 to-teal-600
             hover:from-emerald-500 hover:to-teal-500
@@ -1773,7 +1607,7 @@ export default function App() {
         {/* Sync timestamps */}
         <button
           onClick={() => handleAiTranscribe(false, true)}
-          disabled={!audioFile || isTranscribing || isSyncing || isAnalyzing}
+          disabled={!audioFile || isTranscribing || isSyncing}
           className="h-[38px] px-3 rounded-lg font-semibold text-xs flex items-center gap-1.5 transition-all shrink-0
             border border-violet-500/30 text-violet-300/80
             hover:bg-violet-500/10 hover:border-violet-500/60 hover:text-violet-200
@@ -2442,15 +2276,6 @@ export default function App() {
                 <div className="absolute inset-0 bg-gradient-to-br from-[#1a0533] via-[#0d1b3e] to-[#050d1a]" />
               )}
 
-              {/* Analyzing overlay */}
-              {isAnalyzing && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/60 backdrop-blur-sm z-10">
-                  <Loader2 className="w-8 h-8 text-violet-400 animate-spin" />
-                  <p className="text-sm text-white/70">Đang phân tích âm thanh...</p>
-                  <p className="text-xs text-white/30">Tìm điểm dừng tự nhiên trong bài nhạc</p>
-                </div>
-              )}
-
               {/* Lyrics overlay */}
               <div
                 ref={lyricsViewRef}
@@ -2548,7 +2373,6 @@ export default function App() {
                     <div />
                   )
                 ) : (
-                  !isAnalyzing && (
                     <div className="text-center space-y-3">
                       <div className="w-14 h-14 rounded-full bg-white/[0.06] flex items-center justify-center mx-auto">
                         <Music className="w-7 h-7 text-white/15" />
@@ -2557,13 +2381,12 @@ export default function App() {
                         {!audioFile
                           ? "Upload nhạc và nhập lyrics để bắt đầu"
                           : !lyricsText.trim()
-                            ? "Nhập lyrics vào ô bên trái"
+                            ? "Nhập lyrics vào toolbar phía trên"
                             : !isReady
                               ? "Đang tải audio..."
-                              : "Nhấn Auto Timeline để đồng bộ"}
+                              : "Nhấn Nhận diện AI để đồng bộ timeline"}
                       </p>
                     </div>
-                  )
                 )}
               </div>
 
