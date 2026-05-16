@@ -811,6 +811,16 @@ export default function App() {
   const getAudioCacheKey = (file: File) =>
     `lvg_transcribe_${file.name}_${file.size}_${file.lastModified}`;
 
+  // Clamp all timestamps so nothing exceeds the actual audio duration.
+  const clampLines = (lines: LyricLine[]): LyricLine[] => {
+    if (!duration) return lines;
+    return lines.map((l) => ({
+      ...l,
+      start: Math.min(l.start, duration),
+      end:   Math.min(l.end,   duration),
+    }));
+  };
+
   const applyTranscribeResult = (
     geminiLines: { text: string; start: number; end: number }[],
     keepManual = false,
@@ -826,14 +836,14 @@ export default function App() {
           start: geminiLines[i].start,
           end:   geminiLines[i].end,
         }));
-        setLyricsLines(reinsertMarkers(allInputLines, timedLyrics));
+        setLyricsLines(clampLines(reinsertMarkers(allInputLines, timedLyrics)));
         return;
       }
 
       // Fallback: distribute Gemini's time range proportionally across lyric lines
       if (lyricOnly.length > 0 && geminiLines.length > 0) {
         const rangeStart = geminiLines[0].start;
-        const rangeEnd   = geminiLines[geminiLines.length - 1].end;
+        const rangeEnd   = Math.min(geminiLines[geminiLines.length - 1].end, duration || Infinity);
         const totalDur   = Math.max(rangeEnd - rangeStart, lyricOnly.length * 2);
         const charLens   = lyricOnly.map((l) => Math.max(l.length, 1));
         const totalChars = charLens.reduce((a, b) => a + b, 0);
@@ -848,14 +858,14 @@ export default function App() {
             end:   Math.round((rangeStart + endFrac   * totalDur) * 10) / 10,
           };
         });
-        setLyricsLines(reinsertMarkers(allInputLines, timedLyrics));
+        setLyricsLines(clampLines(reinsertMarkers(allInputLines, timedLyrics)));
         return;
       }
     }
 
-    // "Nhận diện AI" mode: use Gemini's text + timestamps as-is (no markers expected)
+    // "Nhận diện AI" mode: clamp Gemini timestamps to actual audio duration
     setLyricsText(geminiLines.map((l) => l.text).join("\n"));
-    setLyricsLines(geminiLines);
+    setLyricsLines(clampLines(geminiLines));
   };
 
   const handleAiTranscribe = async (forceRefresh = false, keepManual = false) => {
