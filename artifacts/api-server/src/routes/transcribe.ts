@@ -190,6 +190,22 @@ router.post("/transcribe-audio", async (req, res) => {
   res.json({ lines });
 });
 
+function parseTimestamp(val: unknown): number {
+  if (typeof val === "number") return isFinite(val) ? val : 0;
+  if (typeof val === "string") {
+    const trimmed = val.trim();
+    // Handle HH:MM:SS or MM:SS string timestamps (Gemini sometimes returns these)
+    if (trimmed.includes(":")) {
+      const parts = trimmed.split(":").map(Number);
+      if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+      if (parts.length === 2) return parts[0] * 60 + parts[1];
+    }
+    const n = parseFloat(trimmed);
+    return isFinite(n) ? n : 0;
+  }
+  return 0;
+}
+
 function parseGeminiResponse(rawText: string): { text: string; start: number; end: number }[] {
   const jsonText = rawText
     .replace(/^```(?:json)?\s*/i, "")
@@ -197,7 +213,11 @@ function parseGeminiResponse(rawText: string): { text: string; start: number; en
     .trim();
   const parsed = JSON.parse(jsonText);
   if (!Array.isArray(parsed)) throw new Error("Not an array");
-  return parsed as { text: string; start: number; end: number }[];
+  return (parsed as Record<string, unknown>[]).map((item) => ({
+    text: String(item.text ?? "").trim(),
+    start: parseTimestamp(item.start),
+    end: parseTimestamp(item.end),
+  }));
 }
 
 export default router;

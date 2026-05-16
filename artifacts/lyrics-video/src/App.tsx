@@ -731,9 +731,16 @@ export default function App() {
         const cached = localStorage.getItem(cacheKey);
         if (cached) {
           const lines = JSON.parse(cached) as { text: string; start: number; end: number }[];
-          applyTranscribeResult(lines, keepManual);
-          setTranscribeFromCache(true);
-          return;
+          // Validate cached timestamps — if all near-zero, the cache is stale/corrupt; clear it
+          const maxStart = lines.length > 0 ? Math.max(...lines.map((l) => l.start)) : 0;
+          if (lines.length > 3 && maxStart < 1) {
+            localStorage.removeItem(cacheKey);
+            // Fall through to re-fetch
+          } else {
+            applyTranscribeResult(lines, keepManual);
+            setTranscribeFromCache(true);
+            return;
+          }
         }
       }
 
