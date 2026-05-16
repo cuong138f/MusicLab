@@ -54,40 +54,28 @@ function fmtEta(secs: number): string {
   return m > 0 ? `~${m}m${s}s` : `~${s}s`;
 }
 
-const DEFAULT_PROMPT = `Bạn là chuyên gia phiên âm lời bài hát. Nhiệm vụ: lắng nghe TOÀN BỘ file âm thanh từ đầu đến cuối và tạo bản ghi lời có timestamp chính xác, đầy đủ cho mọi dòng được hát.
+const DEFAULT_PROMPT = `Bạn là chuyên gia phiên âm lời bài hát. Lắng nghe TOÀN BỘ audio từ đầu đến cuối, xuất tất cả dòng lời với timestamp chính xác.
 
-ĐỊNH DẠNG TRẢ VỀ: Chỉ một mảng JSON thuần — không markdown, không code block, không giải thích.
-Mỗi phần tử: { "text": "<dòng lời>", "start": <giây>, "end": <giây> }
-- "start": giây chính xác khi giọng ca BẮT ĐẦU dòng này
-- "end": giây chính xác khi giọng ca KẾT THÚC âm tiết cuối (KHÔNG phải khi dòng tiếp theo bắt đầu)
-- Thời gian là số thập phân 1 chữ số (ví dụ: 12.3)
-- "end" phải lớn hơn "start"; thời lượng mỗi dòng thường từ 1.5 đến 8 giây
+OUTPUT: Chỉ mảng JSON thuần — không markdown, không code block, không giải thích.
+[{ "text": "dòng lời", "start": 12.3, "end": 14.8 }, ...]
 
-QUY TẮC BẮT BUỘC — tuân thủ tất cả:
+TIMESTAMP:
+• "start" = giây khi giọng ca BẮT ĐẦU dòng này
+• "end" = giây khi giọng ca NGỪNG HẲN tại âm tiết cuối (không phải lúc dòng kế bắt đầu)
+• Số thập phân 1 chữ số  •  "end" > "start"  •  thường 1.5–8 giây/dòng
+• Tăng dần: "start"[n] > "end"[n-1] — không chồng chéo
+• Không vượt tổng thời lượng file
 
-1. QUÉT TOÀN BỘ AUDIO: Bắt đầu từ 0:00 và tiến đến giây cuối cùng. KHÔNG dừng sớm, KHÔNG bỏ qua đoạn giữa hoặc cuối bài.
+NỘI DUNG:
+• Ghi TẤT CẢ: verse, chorus, bridge, hook, ad-lib, backing vocal có lời riêng
+• Đoạn lặp (chorus/hook hát nhiều lần): mỗi lần hát = 1 entry riêng với timestamp riêng
+• Bỏ qua chỉ đoạn hoàn toàn không lời (nhạc thuần, solo nhạc cụ)
+• Phiên âm đúng âm thanh nghe được — không tự thêm hay bịa lời
+• Một dòng = một câu nhạc / một hơi thở; nếu > 8 giây thì cắt tại điểm ngắt tự nhiên
 
-2. GHI ĐẦY ĐỦ MỌI DÒNG LỜI: Bao gồm verse, chorus, bridge, hook, ad-lib, hát nền nếu có lời riêng biệt. Bỏ sót bất kỳ dòng nào là lỗi nghiêm trọng.
+ĐẦY ĐỦ: Bài hát thường 30–60+ dòng — xuất toàn bộ, không dừng giữa chừng. Dòng cuối phải có "start" nằm trong 60 giây cuối file.
 
-3. ĐOẠN LẶP LẠI (chorus/hook): Nếu cùng một đoạn lời được hát lại nhiều lần, BẮT BUỘC ghi TẤT CẢ lần xuất hiện với timestamp riêng biệt. KHÔNG dùng chung timestamp cho các lần khác nhau — mỗi lần hát là một entry độc lập.
-
-4. "end" = thời điểm giọng ngừng hát: Nếu ca sĩ giữ note đến 3.8s rồi ngừng nhưng dòng tiếp theo bắt đầu lúc 6.0s, thì "end" = 3.8, không phải 6.0.
-
-5. KHÔNG QUÁ 10 GIÂY mỗi dòng. Nếu dài hơn, cắt tại điểm ngắt tự nhiên (hơi thở, câu nhạc).
-
-6. CHỈ BỎ QUA đoạn nhạc thuần không có lời (intro nhạc, solo guitar, break trống). Nếu có bất kỳ lời nào — ghi lại. Nếu không chắc — vẫn ghi.
-
-7. KHÔNG TỰ THÊM LỜI: Phiên âm đúng những gì được hát. Nếu không nghe rõ, ghi xấp xỉ âm thanh. Không để trống dòng.
-
-8. TIMESTAMP TĂNG DẦN: "start" của mỗi dòng phải lớn hơn "end" của dòng trước. Tuyệt đối không chồng chéo.
-
-9. KHÔNG CẮT NGẮN KẾT QUẢ: Bài hát thường có 30–60+ dòng. Xuất ĐẦY ĐỦ tất cả. Không dừng sau 20–30 dòng nếu bài hát vẫn còn lời tiếp theo.
-
-10. TIMESTAMP KHÔNG VƯỢT QUÁ ĐỘ DÀI BÀI: "end" của dòng cuối cùng không được vượt quá tổng thời lượng file âm thanh.
-
-Kiểm tra trước khi xuất: xác nhận dòng cuối cùng có "start" gần cuối file (trong 60 giây cuối), và tổng số dòng hợp lý so với độ dài bài hát.
-
-Xuất mảng JSON ngay bây giờ:`.trim();
+Xuất mảng JSON:`.trim();
 
 // ── Word-by-word coloring helpers ─────────────────────────────────────────────
 // CSS mask-image gradients bleed across wrapped lines because they apply to the
