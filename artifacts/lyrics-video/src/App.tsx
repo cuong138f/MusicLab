@@ -2075,6 +2075,22 @@ export default function App() {
           <div className="px-6 pb-4 shrink-0">
             <div className="max-w-[900px] mx-auto bg-white/[0.03] border border-white/[0.06] rounded-2xl px-5 py-3 flex items-center gap-4 flex-wrap">
 
+              {/* Pre-roll — always first */}
+              <div className="flex items-center gap-2">
+                <p className="text-[9px] font-semibold uppercase tracking-widest text-white/30 shrink-0">Hiện trước</p>
+                <input
+                  type="range" min={0} max={3} step={0.1} value={prerollSeconds}
+                  onChange={(e) => setPrerollSeconds(Number(e.target.value))}
+                  className="w-20 h-1.5 rounded-full appearance-none cursor-pointer"
+                  style={{ accentColor: "#F59E0B" }}
+                />
+                <span className="text-[9px] font-mono text-amber-400/70 w-8 shrink-0">
+                  {prerollSeconds === 0 ? "tắt" : `${prerollSeconds.toFixed(1)}s`}
+                </span>
+              </div>
+
+              <div className="h-5 w-px bg-white/[0.06] shrink-0" />
+
               {/* Colors */}
               <div className="flex items-center gap-2.5">
                 <p className="text-[9px] font-semibold uppercase tracking-widest text-white/30 shrink-0">Màu</p>
@@ -2201,21 +2217,6 @@ export default function App() {
                 <span className="text-[9px] font-mono text-violet-400/70 w-8 shrink-0">{lyricFontSize}%</span>
               </div>
 
-              <div className="h-5 w-px bg-white/[0.06] shrink-0" />
-
-              {/* Pre-roll */}
-              <div className="flex items-center gap-2">
-                <p className="text-[9px] font-semibold uppercase tracking-widest text-white/30 shrink-0">Hiện trước</p>
-                <input
-                  type="range" min={0} max={3} step={0.1} value={prerollSeconds}
-                  onChange={(e) => setPrerollSeconds(Number(e.target.value))}
-                  className="w-20 h-1.5 rounded-full appearance-none cursor-pointer"
-                  style={{ accentColor: "#F59E0B" }}
-                />
-                <span className="text-[9px] font-mono text-amber-400/70 w-8 shrink-0">
-                  {prerollSeconds === 0 ? "tắt" : `${prerollSeconds.toFixed(1)}s`}
-                </span>
-              </div>
             </div>
           </div>
 
