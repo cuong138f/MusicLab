@@ -493,6 +493,7 @@ export default function App() {
   const [transcribeError, setTranscribeError] = useState<string | null>(null);
   const [transcribeFromCache, setTranscribeFromCache] = useState(false);
   const [showPrompt, setShowPrompt] = useState(false);
+  const [showLyrics, setShowLyrics] = useState(true);
   const [customPrompt, setCustomPrompt] = useState<string>(() =>
     localStorage.getItem("lv_customPrompt") ?? DEFAULT_PROMPT
   );
@@ -1209,7 +1210,23 @@ export default function App() {
 
       {/* ── TOOLBAR ─────────────────────────────────────────── */}
       <div className="shrink-0 border-b border-white/[0.06] bg-[#0d0d0d] px-4 py-2.5 flex items-center gap-2.5 overflow-x-auto">
-        {/* Prompt toggle — far left */}
+        {/* Lyrics toggle — far left */}
+        <button
+          onClick={() => setShowLyrics((v) => !v)}
+          className={`flex items-center gap-1 text-[10px] transition-colors shrink-0 ${showLyrics ? "text-violet-400" : "text-white/20 hover:text-violet-400"}`}
+          title="Nhập lời bài hát"
+        >
+          <ChevronDown
+            className="w-3 h-3 transition-transform duration-200"
+            style={{ transform: showLyrics ? "rotate(180deg)" : "rotate(0deg)" }}
+          />
+          <span>Lyrics</span>
+          {lyricsText.trim() && (
+            <span className="w-1.5 h-1.5 rounded-full bg-violet-400 ml-0.5" />
+          )}
+        </button>
+
+        {/* Prompt toggle */}
         <button
           onClick={() => setShowPrompt((v) => !v)}
           className={`flex items-center gap-1 text-[10px] transition-colors shrink-0 ${showPrompt ? "text-violet-400" : "text-white/20 hover:text-violet-400"}`}
@@ -1368,22 +1385,44 @@ export default function App() {
         </button>
       </div>
 
-      {/* Collapsible prompt editor (below toolbar) */}
-      {showPrompt && (
+      {/* Collapsible panels — Lyrics and/or Prompt */}
+      {(showLyrics || showPrompt) && (
         <div className="shrink-0 border-b border-white/[0.06] bg-[#0d0d0d] px-5 py-3 flex gap-4 items-start">
-          <textarea
-            value={customPrompt}
-            onChange={(e) => setCustomPrompt(e.target.value)}
-            rows={6}
-            spellCheck={false}
-            className="flex-1 bg-white/[0.03] border border-white/[0.08] focus:border-violet-500/40 rounded-xl p-3 text-[11px] text-white/60 resize-none outline-none transition-all font-mono leading-relaxed"
-          />
-          <button
-            onClick={() => setCustomPrompt(DEFAULT_PROMPT)}
-            className="text-[10px] text-white/25 hover:text-white/50 transition-colors underline underline-offset-2 mt-1 shrink-0"
-          >
-            Khôi phục mặc định
-          </button>
+          {showLyrics && (
+            <div className="flex flex-col gap-1.5 flex-1 min-w-0">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-semibold tracking-[0.12em] uppercase text-white/40">Lyrics</span>
+                {lyricsText.trim() && <span className="text-[10px] text-white/30">{lyricsText.split("\n").filter((l) => l.trim()).length} dòng</span>}
+              </div>
+              <textarea
+                value={lyricsText}
+                onChange={(e) => setLyricsText(e.target.value)}
+                rows={6}
+                placeholder={"Nhập lyrics ở đây...\nMỗi dòng là một câu\nAuto Timeline sẽ tự xác định thời điểm"}
+                className="w-full bg-white/[0.03] border border-white/[0.08] focus:border-violet-500/40 rounded-xl p-3 text-[11px] text-white/60 placeholder-white/20 resize-none outline-none transition-all font-mono leading-relaxed"
+              />
+            </div>
+          )}
+          {showPrompt && (
+            <div className="flex flex-col gap-1.5 flex-1 min-w-0">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-semibold tracking-[0.12em] uppercase text-white/40">Prompt AI</span>
+                <button
+                  onClick={() => setCustomPrompt(DEFAULT_PROMPT)}
+                  className="text-[10px] text-white/25 hover:text-white/50 transition-colors underline underline-offset-2 shrink-0"
+                >
+                  Khôi phục mặc định
+                </button>
+              </div>
+              <textarea
+                value={customPrompt}
+                onChange={(e) => setCustomPrompt(e.target.value)}
+                rows={6}
+                spellCheck={false}
+                className="w-full bg-white/[0.03] border border-white/[0.08] focus:border-violet-500/40 rounded-xl p-3 text-[11px] text-white/60 resize-none outline-none transition-all font-mono leading-relaxed"
+              />
+            </div>
+          )}
         </div>
       )}
 
@@ -1391,20 +1430,6 @@ export default function App() {
         {/* ── LEFT PANEL ─────────────────────────────────────── */}
         <aside className="w-[300px] shrink-0 border-r border-white/[0.06] flex flex-col bg-[#0d0d0d] overflow-hidden">
           <div className="flex flex-col h-full p-4 gap-3">
-
-            {/* Lyrics Input */}
-            <section className="flex-1 flex flex-col min-h-0">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-[10px] font-semibold tracking-[0.12em] uppercase text-white/40">Lyrics</p>
-                {lineCount > 0 && <span className="text-[10px] text-white/30">{lineCount} dòng</span>}
-              </div>
-              <textarea
-                value={lyricsText}
-                onChange={(e) => setLyricsText(e.target.value)}
-                placeholder={"Nhập lyrics ở đây...\nMỗi dòng là một câu\nAuto Timeline sẽ tự xác định thời điểm"}
-                className="flex-1 w-full min-h-0 bg-white/[0.03] border border-white/[0.08] focus:border-violet-500/40 rounded-xl p-4 text-sm text-white/70 placeholder-white/20 resize-none outline-none transition-all font-mono leading-relaxed"
-              />
-            </section>
 
             {/* Auto Timeline Button */}
             <div className="space-y-2">
