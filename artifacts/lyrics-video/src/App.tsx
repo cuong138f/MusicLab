@@ -117,18 +117,19 @@ function getWordLitStyle(s: { dot: string; current: React.CSSProperties }): Reac
   return s.current;
 }
 
-function KaraokeText({ text, progress, style, fontSize }: {
+function KaraokeText({ text, progress, style, fontSize, fontFamily }: {
   text: string;
   progress: number;
   style: { dot: string; current: React.CSSProperties };
   fontSize: string;
+  fontFamily?: string;
 }) {
   const litStyle = getWordLitStyle(style);
   const segs = text.split(/(\s+)/);
   const total = segs.filter(s => s.trim()).reduce((n, w) => n + w.length, 0);
   let soFar = 0;
   return (
-    <p style={{ fontSize, fontWeight: 700, letterSpacing: "0.015em", lineHeight: 1.35, textAlign: "center" }}>
+    <p style={{ fontSize, fontWeight: 700, letterSpacing: "0.015em", lineHeight: 1.35, textAlign: "center", ...(fontFamily && { fontFamily }) }}>
       {segs.map((seg, i) => {
         if (!seg.trim()) return <span key={i}>{seg}</span>;
         const mid = (soFar + seg.length / 2) / total;
@@ -143,18 +144,19 @@ function KaraokeText({ text, progress, style, fontSize }: {
   );
 }
 
-function WipeText({ text, wipeProgress, style, fontSize }: {
+function WipeText({ text, wipeProgress, style, fontSize, fontFamily }: {
   text: string;
   wipeProgress: number;
   style: { dot: string; current: React.CSSProperties };
   fontSize: string;
+  fontFamily?: string;
 }) {
   const litStyle = getWordLitStyle(style);
   const segs = text.split(/(\s+)/);
   const total = segs.filter(s => s.trim()).reduce((n, w) => n + w.length, 0);
   let soFar = 0;
   return (
-    <p style={{ fontSize, fontWeight: 700, letterSpacing: "0.015em", lineHeight: 1.35, textAlign: "center" }}>
+    <p style={{ fontSize, fontWeight: 700, letterSpacing: "0.015em", lineHeight: 1.35, textAlign: "center", ...(fontFamily && { fontFamily }) }}>
       {segs.map((seg, i) => {
         if (!seg.trim()) return <span key={i}>{seg}</span>;
         const mid = (soFar + seg.length / 2) / total;
@@ -2559,6 +2561,7 @@ export default function App() {
                                 letterSpacing: "0.015em",
                                 lineHeight: 1.35,
                                 textAlign: "center",
+                                fontFamily: lyricFont,
                                 ...activeStyle.current,
                               }}>
                                 {currentLine?.text}
@@ -2591,6 +2594,7 @@ export default function App() {
                               progress={lineProgress}
                               style={activeStyle}
                               fontSize={`calc(clamp(1.1rem, 4.2cqw, 2.5rem) * ${lyricFontSize / 100})`}
+                              fontFamily={lyricFont}
                             />
                           ) : lyricEffect === "wipe" ? (
                             /* Wipe: word-by-word erase left→right after 1.5 s hold */
@@ -2599,6 +2603,7 @@ export default function App() {
                               wipeProgress={wipeProgress}
                               style={activeStyle}
                               fontSize={`calc(clamp(1.1rem, 4.2cqw, 2.5rem) * ${lyricFontSize / 100})`}
+                              fontFamily={lyricFont}
                             />
                           ) : (
                             <p style={{
@@ -2606,6 +2611,7 @@ export default function App() {
                               fontWeight: 700,
                               letterSpacing: "0.015em",
                               lineHeight: 1.35,
+                              fontFamily: lyricFont,
                               ...activeStyle.current,
                             }}>
                               {currentLine?.text}
