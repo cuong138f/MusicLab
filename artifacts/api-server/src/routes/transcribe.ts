@@ -43,6 +43,7 @@ NỘI DUNG:
 • Một dòng = một câu nhạc / một hơi thở; nếu > 8 giây thì cắt tại điểm ngắt tự nhiên
 
 ĐẦY ĐỦ: Bài hát thường 30–60+ dòng — xuất toàn bộ, không dừng giữa chừng. Dòng cuối phải có "start" nằm trong 60 giây cuối file.
+• Không để khoảng trống > 20 giây giữa hai dòng lời liên tiếp, trừ khi đoạn đó thực sự hoàn toàn không có lời
 
 Xuất mảng JSON:
 `.trim();

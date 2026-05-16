@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, Fragment } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import WaveSurfer from "wavesurfer.js";
 import { Music, Image, Play, Pause, Wand2, SkipBack, Upload, Loader2, Sparkles, Pencil, Check, X, Download, Scissors, Trash2, ChevronDown } from "lucide-react";
@@ -74,6 +74,7 @@ NỘI DUNG:
 • Một dòng = một câu nhạc / một hơi thở; nếu > 8 giây thì cắt tại điểm ngắt tự nhiên
 
 ĐẦY ĐỦ: Bài hát thường 30–60+ dòng — xuất toàn bộ, không dừng giữa chừng. Dòng cuối phải có "start" nằm trong 60 giây cuối file.
+• Không để khoảng trống > 20 giây giữa hai dòng lời liên tiếp, trừ khi đoạn đó thực sự hoàn toàn không có lời
 
 Xuất mảng JSON:`.trim();
 
@@ -1793,9 +1794,26 @@ export default function App() {
                   </div>
                 </div>
                 <div className="space-y-0.5 max-h-52 overflow-y-auto rounded-xl border border-white/[0.06] bg-white/[0.02] p-1">
-                  {lyricsLines.map((line, i) => line.isMarker ? (
+                  {lyricsLines.map((line, i) => {
+                    let prevNonMarker: (typeof lyricsLines)[0] | null = null;
+                    for (let j = i - 1; j >= 0; j--) {
+                      if (!lyricsLines[j].isMarker) { prevNonMarker = lyricsLines[j]; break; }
+                    }
+                    const gapSecs = (!line.isMarker && prevNonMarker) ? line.start - prevNonMarker.end : 0;
+                    return (
+                    <Fragment key={i}>
+                      {gapSecs > 20 && (
+                        <div className="flex items-center gap-1.5 px-2 py-1">
+                          <div className="flex-1 h-px bg-amber-500/25" />
+                          <span className="text-[9px] font-semibold text-amber-400/70 px-1 shrink-0 flex items-center gap-1">
+                            ⚠ Khoảng trống {gapSecs.toFixed(0)}s — có thể thiếu lời
+                          </span>
+                          <div className="flex-1 h-px bg-amber-500/25" />
+                        </div>
+                      )}
+                      {line.isMarker ? (
                     /* ── Section marker row ── */
-                    <div key={i} className="flex items-center gap-1.5 px-2 py-1 mt-1 first:mt-0">
+                    <div className="flex items-center gap-1.5 px-2 py-1 mt-1 first:mt-0">
                       <div className="flex-1 h-px bg-violet-500/20" />
                       <span className="text-[9px] font-semibold tracking-widest uppercase text-violet-400/60 px-1 shrink-0">
                         {line.text.replace(/^\[|\]$/g, "")}
@@ -1804,7 +1822,6 @@ export default function App() {
                     </div>
                   ) : (
                     <div
-                      key={i}
                       className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs transition-colors group ${
                         i === currentLineIndex
                           ? "bg-violet-500/15 text-white"
@@ -1964,7 +1981,10 @@ export default function App() {
                         </button>
                       )}
                     </div>
-                  ))}
+                      )}
+                    </Fragment>
+                    );
+                  })}
                 </div>
                 <p className="text-[10px] text-white/20 mt-1.5 text-center">
                   <span className="text-violet-400/50">start</span> ·{" "}
