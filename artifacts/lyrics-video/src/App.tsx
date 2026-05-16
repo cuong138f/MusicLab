@@ -1991,20 +1991,7 @@ export default function App() {
                     </div>
                   ) : (
                     /* ── Intro: timeline set but not reached first lyric yet ── */
-                    <div className="flex flex-col items-center gap-3">
-                      <div className="flex gap-1.5 items-end h-6">
-                        {[0, 1, 2, 3, 4].map((i) => (
-                          <span
-                            key={i}
-                            className="w-1 rounded-full bg-white/20"
-                            style={{
-                              height: `${40 + Math.sin(i * 1.3) * 30}%`,
-                              animation: isPlaying ? `bounce 0.8s ease-in-out ${i * 0.12}s infinite alternate` : "none",
-                            }}
-                          />
-                        ))}
-                      </div>
-                    </div>
+                    <div />
                   )
                 ) : (
                   !isAnalyzing && (
