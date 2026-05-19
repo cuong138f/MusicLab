@@ -376,8 +376,17 @@ export default function CameraScanner({ onDetected, onClose }: CameraScannerProp
               })}
             </div>
 
-            {/* Compact list */}
-            <div className="flex-1 overflow-y-auto divide-y bg-white">
+            {/* Cost estimate table */}
+            <div className="flex-1 overflow-y-auto bg-white">
+              {/* Table header */}
+              <div className="grid grid-cols-[32px_1fr_52px_76px] gap-x-2 px-4 py-2 bg-muted/50 border-b text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                <div />
+                <div>Sản phẩm</div>
+                <div className="text-center">SL</div>
+                <div className="text-right">Thành tiền</div>
+              </div>
+
+              {/* Rows */}
               {scannedItems.map((item, idx) => {
                 const selected = selectedIds.has(item.productId);
                 return (
@@ -385,44 +394,71 @@ export default function CameraScanner({ onDetected, onClose }: CameraScannerProp
                     key={item.productId}
                     type="button"
                     onClick={() => toggleItem(item.productId)}
-                    className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left transition-colors active:bg-muted/60 ${
-                      selected ? "bg-white" : "bg-muted/30"
+                    className={`w-full grid grid-cols-[32px_1fr_52px_76px] gap-x-2 items-center px-4 py-2.5 text-sm text-left border-b last:border-0 transition-colors active:bg-muted/40 ${
+                      selected ? "bg-white" : "bg-muted/20"
                     }`}
                   >
-                    <div className={`w-7 h-7 rounded-full shrink-0 flex items-center justify-center font-bold text-xs transition-colors ${
+                    {/* Number badge */}
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs transition-colors ${
                       selected ? "bg-primary text-white" : "bg-muted text-muted-foreground"
                     }`}>
                       {idx + 1}
                     </div>
-                    <span className={`flex-1 font-medium line-clamp-1 ${
-                      selected ? "text-foreground" : "text-muted-foreground line-through"
-                    }`}>
-                      {item.productName}
-                    </span>
-                    <div className={`text-right shrink-0 ${selected ? "" : "opacity-40"}`}>
-                      <span className="text-muted-foreground text-xs mr-1.5">x{item.quantity}</span>
-                      <span className="text-primary font-semibold">
-                        {(item.unitPrice * item.quantity).toLocaleString("vi-VN")}đ
-                      </span>
+
+                    {/* Name + unit price */}
+                    <div className="min-w-0">
+                      <div className={`font-medium line-clamp-1 leading-tight ${
+                        selected ? "text-foreground" : "text-muted-foreground line-through"
+                      }`}>
+                        {item.productName}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {item.unitPrice.toLocaleString("vi-VN")}đ/cái
+                      </div>
+                    </div>
+
+                    {/* Qty */}
+                    <div className={`text-center font-medium ${selected ? "text-foreground" : "text-muted-foreground opacity-50"}`}>
+                      ×{item.quantity}
+                    </div>
+
+                    {/* Subtotal */}
+                    <div className={`text-right font-semibold ${selected ? "text-primary" : "text-muted-foreground line-through opacity-40"}`}>
+                      {(item.unitPrice * item.quantity).toLocaleString("vi-VN")}đ
                     </div>
                   </button>
                 );
               })}
+
+              {/* Summary rows */}
+              <div className="px-4 pt-3 pb-1 space-y-1.5 bg-muted/30 border-t">
+                {/* Selected subtotal */}
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">
+                    Đã chọn ({selectedIds.size}/{scannedItems.length} sản phẩm)
+                  </span>
+                  <span className="font-medium">
+                    {scannedItems
+                      .filter((i) => selectedIds.has(i.productId))
+                      .reduce((s, i) => s + i.unitPrice * i.quantity, 0)
+                      .toLocaleString("vi-VN")}đ
+                  </span>
+                </div>
+                {/* Grand total highlight */}
+                <div className="flex items-center justify-between py-2 border-t">
+                  <span className="font-bold text-base">Tổng ước tính</span>
+                  <span className="font-bold text-primary text-lg">
+                    {scannedItems
+                      .filter((i) => selectedIds.has(i.productId))
+                      .reduce((s, i) => s + i.unitPrice * i.quantity, 0)
+                      .toLocaleString("vi-VN")} đ
+                  </span>
+                </div>
+              </div>
             </div>
 
-            {/* Total + actions */}
-            <div className="bg-white border-t px-4 py-4 space-y-3">
-              <div className="flex items-center justify-between text-sm font-semibold px-1">
-                <span className="text-muted-foreground">
-                  Đã chọn {selectedIds.size}/{scannedItems.length}
-                </span>
-                <span className="text-primary text-base">
-                  {scannedItems
-                    .filter((i) => selectedIds.has(i.productId))
-                    .reduce((s, i) => s + i.unitPrice * i.quantity, 0)
-                    .toLocaleString("vi-VN")} đ
-                </span>
-              </div>
+            {/* Actions */}
+            <div className="bg-white border-t px-4 py-4">
               <div className="flex gap-3">
                 <Button type="button" variant="outline" onClick={retake} className="flex-1 gap-2 rounded-full h-12">
                   <RotateCcw className="w-4 h-4" />
