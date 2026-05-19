@@ -18,7 +18,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Image as ImageIcon, UploadCloud, Loader2, Search, X, ChevronLeft, ChevronRight, Eraser, Square } from "lucide-react";
+import { Image as ImageIcon, UploadCloud, Loader2, Search, X, ChevronLeft, ChevronRight, Eraser } from "lucide-react";
 
 const formSchema = z.object({
   name: z.string().min(1, "Vui lòng nhập tên sản phẩm"),
@@ -71,14 +71,25 @@ export default function ProductForm({ product, onComplete, onCancel }: ProductFo
   const [showSearchPanel, setShowSearchPanel] = useState(false);
   const [searchError, setSearchError] = useState("");
   const [isRemovingBg, setIsRemovingBg] = useState(false);
-  const [isAddingWhiteBg, setIsAddingWhiteBg] = useState(false);
 
   const handleRemoveBg = useCallback(async () => {
     if (!imagePreview) return;
     setIsRemovingBg(true);
     try {
       const { removeBackground } = await import("@imgly/background-removal");
-      const blob = await removeBackground(imagePreview);
+
+      let input: Blob | string;
+      if (imagePreview.startsWith("data:")) {
+        const res = await fetch(imagePreview);
+        input = await res.blob();
+      } else {
+        const proxyUrl = `/api/proxy-image?url=${encodeURIComponent(imagePreview)}`;
+        const res = await fetch(proxyUrl);
+        if (!res.ok) throw new Error("proxy failed");
+        input = await res.blob();
+      }
+
+      const resultBlob = await removeBackground(input);
       const reader = new FileReader();
       reader.onloadend = () => {
         const base64 = reader.result as string;
@@ -86,36 +97,11 @@ export default function ProductForm({ product, onComplete, onCancel }: ProductFo
         form.setValue("imageUrl", base64);
         setIsRemovingBg(false);
       };
-      reader.readAsDataURL(blob);
+      reader.readAsDataURL(resultBlob);
     } catch {
-      toast({ variant: "destructive", title: "Lỗi", description: "Không thể xóa nền ảnh." });
+      toast({ variant: "destructive", title: "Lỗi", description: "Không thể xóa nền ảnh. Hãy thử tải ảnh lên trước rồi xóa nền." });
       setIsRemovingBg(false);
     }
-  }, [imagePreview, form, toast]);
-
-  const handleAddWhiteBg = useCallback(() => {
-    if (!imagePreview) return;
-    setIsAddingWhiteBg(true);
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = img.naturalWidth || img.width;
-      canvas.height = img.naturalHeight || img.height;
-      const ctx = canvas.getContext("2d")!;
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(img, 0, 0);
-      const base64 = canvas.toDataURL("image/png");
-      setImagePreview(base64);
-      form.setValue("imageUrl", base64);
-      setIsAddingWhiteBg(false);
-    };
-    img.onerror = () => {
-      toast({ variant: "destructive", title: "Lỗi", description: "Không thể xử lý ảnh này." });
-      setIsAddingWhiteBg(false);
-    };
-    img.src = imagePreview;
   }, [imagePreview, form, toast]);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -263,38 +249,21 @@ export default function ProductForm({ product, onComplete, onCancel }: ProductFo
                 </Button>
 
                 {imagePreview && (
-                  <div className="grid grid-cols-2 gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="h-9 text-xs bg-transparent hover:bg-red-50 hover:border-red-300 hover:text-red-600"
-                      onClick={handleRemoveBg}
-                      disabled={isRemovingBg || isAddingWhiteBg}
-                      title="Xóa nền ảnh (lần đầu có thể chờ ~10s để tải model)"
-                    >
-                      {isRemovingBg ? (
-                        <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
-                      ) : (
-                        <Eraser className="w-3.5 h-3.5 mr-1" />
-                      )}
-                      Xóa nền
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="h-9 text-xs bg-transparent hover:bg-gray-50 hover:border-gray-400"
-                      onClick={handleAddWhiteBg}
-                      disabled={isRemovingBg || isAddingWhiteBg}
-                      title="Thêm nền trắng"
-                    >
-                      {isAddingWhiteBg ? (
-                        <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
-                      ) : (
-                        <Square className="w-3.5 h-3.5 mr-1 fill-white" />
-                      )}
-                      Nền trắng
-                    </Button>
-                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full h-9 text-xs bg-transparent hover:bg-red-50 hover:border-red-300 hover:text-red-600"
+                    onClick={handleRemoveBg}
+                    disabled={isRemovingBg}
+                    title="Xóa nền ảnh (lần đầu có thể chờ ~15s để tải model AI)"
+                  >
+                    {isRemovingBg ? (
+                      <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                    ) : (
+                      <Eraser className="w-3.5 h-3.5 mr-1.5" />
+                    )}
+                    {isRemovingBg ? "Đang xóa nền..." : "Xóa nền"}
+                  </Button>
                 )}
               </div>
 

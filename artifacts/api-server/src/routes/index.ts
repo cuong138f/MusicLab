@@ -12,6 +12,7 @@ import transcribeRouter from "./transcribe";
 import productsRouter from "./products";
 import searchImageRouter from "./search-image";
 import salesRouter from "./sales";
+import proxyImageRouter from "./proxy-image";
 
 const router: IRouter = Router();
 
@@ -28,5 +29,6 @@ router.use(transcribeRouter);
 router.use("/products", searchImageRouter);
 router.use("/products", productsRouter);
 router.use("/sales", salesRouter);
+router.use(proxyImageRouter);
 
 export default router;
