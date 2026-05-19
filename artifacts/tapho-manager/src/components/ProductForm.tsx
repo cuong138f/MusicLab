@@ -133,7 +133,7 @@ export default function ProductForm({ product, onComplete, onCancel }: ProductFo
         <div className="p-6 pt-2 space-y-6 max-h-[70vh] overflow-y-auto">
           
           <div className="space-y-4 bg-muted/30 p-4 rounded-xl">
-            <FormLabel className="text-base font-serif">Hình ảnh sản phẩm</FormLabel>
+            <label className="text-base font-serif font-medium">Hình ảnh sản phẩm</label>
             <div className="flex gap-4">
               <div className="w-24 h-24 shrink-0 rounded-xl bg-muted border border-border flex items-center justify-center overflow-hidden">
                 {imagePreview ? (
