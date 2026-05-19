@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useRef } from "react";
 import { Product } from "@workspace/api-client-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -56,42 +56,40 @@ export default function ProductCard({ product, onEdit, index }: ProductCardProps
   };
 
   return (
-    <Card 
-      className="overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 group border-transparent bg-white animate-in fade-in slide-in-from-bottom-4"
+    <Card
+      className="overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 border-transparent bg-white animate-in fade-in slide-in-from-bottom-4"
       style={{ animationDelay: `${index * 50}ms`, animationFillMode: "backwards" }}
     >
       <div className="aspect-square w-full bg-secondary/50 flex items-center justify-center relative overflow-hidden">
         {product.imageUrl ? (
-          <img src={product.imageUrl} alt={product.name} className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-500" />
+          <img src={product.imageUrl} alt={product.name} className="object-cover w-full h-full" />
         ) : (
-          <ImageIcon className="w-12 h-12 text-muted-foreground/30" />
+          <ImageIcon className="w-8 h-8 text-muted-foreground/30" />
         )}
       </div>
-      <CardContent className="p-4">
-        <div className="flex justify-between items-start mb-2">
-          <h3 className="font-serif font-semibold text-lg line-clamp-1 flex-1 pr-2" title={product.name}>{product.name}</h3>
-          <span className="font-medium text-primary bg-primary/10 px-2 py-0.5 rounded-full text-sm whitespace-nowrap">
-            {formatVND(product.price)}
+      <CardContent className="p-3">
+        <p className="font-medium text-sm line-clamp-1 mb-0.5" title={product.name}>{product.name}</p>
+        <p className="text-primary text-sm font-semibold mb-2">{formatVND(product.price)}</p>
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-medium bg-secondary px-2 py-0.5 rounded-md text-secondary-foreground">
+            {product.quantity ?? "N/A"}
           </span>
-        </div>
-        <p className="text-sm text-muted-foreground mb-4 line-clamp-2 min-h-[40px]">
-          {product.description || "Không có mô tả"}
-        </p>
-        <div className="flex items-center justify-between mt-auto">
-          <span className="text-sm font-medium bg-secondary px-2.5 py-1 rounded-md text-secondary-foreground">
-            {product.quantity || "N/A"}
-          </span>
-          <div className="flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
-            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={() => onEdit(product)}>
-              <Pencil className="h-4 w-4" />
+          <div className="flex gap-0.5">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-muted-foreground hover:text-foreground"
+              onClick={() => onEdit(product)}
+            >
+              <Pencil className="h-3.5 w-3.5" />
             </Button>
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive/70 hover:text-destructive hover:bg-destructive/10">
-                  <Trash2 className="h-4 w-4" />
+                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive/60 hover:text-destructive hover:bg-destructive/10">
+                  <Trash2 className="h-3.5 w-3.5" />
                 </Button>
               </AlertDialogTrigger>
-              <AlertDialogContent>
+              <AlertDialogContent className="max-w-[90vw] sm:max-w-md">
                 <AlertDialogHeader>
                   <AlertDialogTitle>Xóa mặt hàng này?</AlertDialogTitle>
                   <AlertDialogDescription>

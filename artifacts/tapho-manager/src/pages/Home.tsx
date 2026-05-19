@@ -86,13 +86,13 @@ export default function Home() {
         </div>
 
         {isLoadingProducts ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
             {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((i) => (
-              <Skeleton key={i} className="aspect-[3/4] w-full rounded-xl" />
+              <Skeleton key={i} className="aspect-square w-full rounded-xl" />
             ))}
           </div>
         ) : products && products.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
             {products.map((product, idx) => (
               <ProductCard key={product.id} product={product} onEdit={handleEdit} index={idx} />
             ))}
@@ -116,7 +116,7 @@ export default function Home() {
       </main>
 
       <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
-        <DialogContent className="sm:max-w-[500px] p-0 overflow-hidden bg-background">
+        <DialogContent className="w-[95vw] max-w-[500px] p-0 overflow-hidden bg-background max-h-[90vh] overflow-y-auto">
           <DialogHeader className="p-6 pb-2">
             <DialogTitle className="font-serif text-xl">
               {editingProduct ? "Sửa thông tin sản phẩm" : "Thêm sản phẩm mới"}
