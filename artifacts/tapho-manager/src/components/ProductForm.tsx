@@ -264,36 +264,20 @@ export default function ProductForm({ product, onComplete, onCancel }: ProductFo
               </div>
 
               {/* Buttons */}
-              <div className="flex flex-col gap-2 flex-1">
-                {/* Scan to identify */}
-                <Button
-                  type="button"
-                  variant="default"
-                  className="w-full h-10 gap-2"
-                  onClick={() => scanInputRef.current?.click()}
-                  disabled={isIdentifying}
-                >
-                  {isIdentifying ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <ScanLine className="w-4 h-4" />
-                  )}
-                  {isIdentifying ? "Đang nhận dạng..." : "Chụp & nhận dạng"}
-                </Button>
-
+              <div className="flex flex-col gap-1.5 flex-1">
                 <Button
                   type="button"
                   variant="outline"
-                  className="w-full h-10 border-dashed border-2 bg-transparent hover:bg-muted/50"
+                  className="w-full h-8 text-xs border-dashed border-2 bg-transparent hover:bg-muted/50 px-2"
                   onClick={() => fileInputRef.current?.click()}
                 >
-                  <UploadCloud className="w-4 h-4 mr-2" />
+                  <UploadCloud className="w-3.5 h-3.5 mr-1.5 shrink-0" />
                   Tải ảnh lên
                 </Button>
                 <Button
                   type="button"
                   variant="outline"
-                  className="w-full h-10 bg-transparent hover:bg-muted/50"
+                  className="w-full h-8 text-xs bg-transparent hover:bg-muted/50 px-2"
                   onClick={() => {
                     setShowSearchPanel((v) => !v);
                     setSearchError("");
@@ -304,23 +288,37 @@ export default function ProductForm({ product, onComplete, onCancel }: ProductFo
                     }
                   }}
                 >
-                  <Search className="w-4 h-4 mr-2" />
+                  <Search className="w-3.5 h-3.5 mr-1.5 shrink-0" />
                   Tìm ảnh
+                </Button>
+                <Button
+                  type="button"
+                  variant="default"
+                  className="w-full h-8 text-xs gap-1.5 px-2"
+                  onClick={() => scanInputRef.current?.click()}
+                  disabled={isIdentifying}
+                >
+                  {isIdentifying ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                  ) : (
+                    <ScanLine className="w-3.5 h-3.5 shrink-0" />
+                  )}
+                  {isIdentifying ? "Nhận dạng..." : "Chụp & nhận dạng"}
                 </Button>
 
                 {imagePreview && (
                   <Button
                     type="button"
                     variant="outline"
-                    className="w-full h-9 text-xs bg-transparent hover:bg-red-50 hover:border-red-300 hover:text-red-600"
+                    className="w-full h-8 text-xs bg-transparent hover:bg-red-50 hover:border-red-300 hover:text-red-600 px-2"
                     onClick={handleRemoveBg}
                     disabled={isRemovingBg}
                     title="Xóa nền ảnh (lần đầu có thể chờ ~15s để tải model AI)"
                   >
                     {isRemovingBg ? (
-                      <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                      <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin shrink-0" />
                     ) : (
-                      <Eraser className="w-3.5 h-3.5 mr-1.5" />
+                      <Eraser className="w-3.5 h-3.5 mr-1 shrink-0" />
                     )}
                     {isRemovingBg ? "Đang xóa nền..." : "Xóa nền"}
                   </Button>
