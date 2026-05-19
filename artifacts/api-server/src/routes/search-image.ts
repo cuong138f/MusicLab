@@ -27,7 +27,7 @@ router.get("/search-image", async (req, res) => {
 
     const links: string[] = (result?.links as string[] | undefined) ?? [];
     for (const link of links) {
-      if (images.length >= 8) break;
+      if (images.length >= 3) break;
       // Bing image detail links contain mediaurl= param with the actual image URL
       try {
         const parsed = new URL(link);

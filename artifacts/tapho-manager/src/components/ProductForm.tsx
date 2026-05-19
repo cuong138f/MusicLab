@@ -259,7 +259,7 @@ export default function ProductForm({ product, onComplete, onCancel }: ProductFo
                 )}
 
                 {searchResults.length > 0 && (
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-3 gap-2 max-w-sm">
                     {searchResults.map((img, i) => (
                       <button
                         key={i}
