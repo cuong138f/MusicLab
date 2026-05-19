@@ -20,24 +20,50 @@ router.get("/search-image", async (req, res) => {
     const app = new FirecrawlApp({ apiKey });
     const v1 = app.v1;
 
-    const productQuery = `${query.trim()} sản phẩm ảnh chính thức bao bì`;
-    const bingUrl = `https://www.bing.com/images/search?q=${encodeURIComponent(productQuery)}&form=HDRSC2&first=1&qft=+filterui:aspect-square+filterui:photo-photo`;
-    const result = await v1.scrapeUrl(bingUrl, { formats: ["links"] });
+    // Step 1: search for relevant product pages
+    const productQuery = `${query.trim()} sản phẩm`;
+    const searchResult = await (app as unknown as { search: (q: string, opts: object) => Promise<{ web?: { url: string }[] }> })
+      .search(productQuery, { limit: 8 });
 
+    const urls: string[] = (searchResult.web ?? []).map((item) => item.url);
+
+    if (urls.length === 0) {
+      res.json({ images: [] });
+      return;
+    }
+
+    // Step 2: parallel scrape up to 6 pages to extract ogImage
+    type ScrapeResult = { metadata?: { ogImage?: string }; extract?: { imageUrl?: string } } | null;
+    const scrapePromises: Promise<ScrapeResult>[] = urls.slice(0, 6).map((url) =>
+      v1.scrapeUrl(url, {
+        formats: ["extract"],
+        extract: { prompt: "Extract the main product image URL from this page. Return {imageUrl: string}" },
+      } as Parameters<typeof v1.scrapeUrl>[1])
+        .then((r) => r as ScrapeResult)
+        .catch(() => null)
+    );
+
+    const scrapeResults = await Promise.allSettled(scrapePromises);
+
+    // Step 3: collect valid image URLs (prefer ogImage, fallback to extract)
     const images: { url: string; title: string }[] = [];
-
-    const links: string[] = (result?.links as string[] | undefined) ?? [];
-    for (const link of links) {
+    for (let i = 0; i < scrapeResults.length; i++) {
       if (images.length >= 3) break;
-      // Bing image detail links contain mediaurl= param with the actual image URL
-      try {
-        const parsed = new URL(link);
-        const mediaUrl = parsed.searchParams.get("mediaurl");
-        if (mediaUrl && mediaUrl.match(/\.(jpg|jpeg|png|webp)/i)) {
-          images.push({ url: mediaUrl, title: query });
-        }
-      } catch {
-        // skip malformed URLs
+      const result = scrapeResults[i];
+      if (result.status !== "fulfilled" || !result.value) continue;
+
+      const r = result.value;
+      const candidates = [
+        r.metadata?.ogImage,
+        r.extract?.imageUrl,
+      ].filter((u): u is string =>
+        typeof u === "string" &&
+        u.startsWith("http") &&
+        /\.(jpg|jpeg|png|webp|avif)/i.test(u)
+      );
+
+      if (candidates.length > 0) {
+        images.push({ url: candidates[0], title: query });
       }
     }
 
