@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useRef } from "react";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -18,8 +18,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Image as ImageIcon, Link as LinkIcon, UploadCloud, Loader2 } from "lucide-react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Image as ImageIcon, UploadCloud, Loader2, Search, X, ChevronLeft, ChevronRight } from "lucide-react";
 
 const formSchema = z.object({
   name: z.string().min(1, "Vui lòng nhập tên sản phẩm"),
@@ -31,6 +30,12 @@ const formSchema = z.object({
 
 type FormValues = z.infer<typeof formSchema>;
 
+interface ImageResult {
+  url: string;
+  title: string;
+  source: string;
+}
+
 interface ProductFormProps {
   product?: Product;
   onComplete: () => void;
@@ -40,15 +45,9 @@ interface ProductFormProps {
 export default function ProductForm({ product, onComplete, onCancel }: ProductFormProps) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  
+
   const createProduct = useCreateProduct();
   const updateProduct = useUpdateProduct();
-  
-  const createFnRef = useRef(createProduct.mutate);
-  createFnRef.current = createProduct.mutate;
-  
-  const updateFnRef = useRef(updateProduct.mutate);
-  updateFnRef.current = updateProduct.mutate;
 
   const isEditing = !!product;
 
@@ -66,6 +65,12 @@ export default function ProductForm({ product, onComplete, onCancel }: ProductFo
   const [imagePreview, setImagePreview] = useState<string>(product?.imageUrl || "");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<ImageResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [showSearchPanel, setShowSearchPanel] = useState(false);
+  const [searchError, setSearchError] = useState("");
+
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -79,10 +84,42 @@ export default function ProductForm({ product, onComplete, onCancel }: ProductFo
     }
   };
 
-  const handleUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const url = e.target.value;
+  const handleSearchImages = async () => {
+    const q = searchQuery.trim() || form.getValues("name").trim();
+    if (!q) {
+      setSearchError("Vui lòng nhập từ khóa tìm kiếm");
+      return;
+    }
+    setIsSearching(true);
+    setSearchError("");
+    setSearchResults([]);
+    try {
+      const res = await fetch(`/api/products/search-image?q=${encodeURIComponent(q)}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Lỗi tìm kiếm");
+      if (!data.images || data.images.length === 0) {
+        setSearchError("Không tìm thấy ảnh phù hợp, thử từ khóa khác");
+      } else {
+        setSearchResults(data.images);
+      }
+    } catch (err: unknown) {
+      setSearchError(err instanceof Error ? err.message : "Không thể tìm ảnh, vui lòng thử lại");
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const handleSelectImage = (url: string) => {
     setImagePreview(url);
     form.setValue("imageUrl", url);
+    setShowSearchPanel(false);
+    setSearchResults([]);
+    setSearchQuery("");
+  };
+
+  const handleClearImage = () => {
+    setImagePreview("");
+    form.setValue("imageUrl", "");
   };
 
   const onSubmit = (data: FormValues) => {
@@ -113,15 +150,9 @@ export default function ProductForm({ product, onComplete, onCancel }: ProductFo
     };
 
     if (isEditing) {
-      updateFnRef.current(
-        { id: product.id, data: payload },
-        { onSuccess, onError }
-      );
+      updateProduct.mutate({ id: product.id, data: payload }, { onSuccess, onError });
     } else {
-      createFnRef.current(
-        { data: payload },
-        { onSuccess, onError }
-      );
+      createProduct.mutate({ data: payload }, { onSuccess, onError });
     }
   };
 
@@ -130,57 +161,129 @@ export default function ProductForm({ product, onComplete, onCancel }: ProductFo
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col">
-        <div className="p-6 pt-2 space-y-6 max-h-[70vh] overflow-y-auto">
-          
-          <div className="space-y-4 bg-muted/30 p-4 rounded-xl">
-            <label className="text-base font-serif font-medium">Hình ảnh sản phẩm</label>
-            <div className="flex gap-4">
-              <div className="w-24 h-24 shrink-0 rounded-xl bg-muted border border-border flex items-center justify-center overflow-hidden">
+        <div className="p-6 pt-2 space-y-6 max-h-[75vh] overflow-y-auto">
+
+          {/* Image section */}
+          <div className="space-y-3 bg-muted/30 p-4 rounded-xl">
+            <label className="text-sm font-medium">Hình ảnh sản phẩm</label>
+
+            <div className="flex gap-3">
+              {/* Preview box */}
+              <div className="relative w-24 h-24 shrink-0 rounded-xl bg-muted border border-border flex items-center justify-center overflow-hidden group">
                 {imagePreview ? (
-                  <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
+                  <>
+                    <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={handleClearImage}
+                      className="absolute top-1 right-1 bg-black/60 text-white rounded-full w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </>
                 ) : (
                   <ImageIcon className="w-8 h-8 text-muted-foreground/50" />
                 )}
               </div>
-              
-              <Tabs defaultValue="upload" className="flex-1">
-                <TabsList className="grid w-full grid-cols-2 mb-2">
-                  <TabsTrigger value="upload" className="text-xs">Tải lên</TabsTrigger>
-                  <TabsTrigger value="url" className="text-xs">Dán Link</TabsTrigger>
-                </TabsList>
-                <TabsContent value="upload" className="mt-0">
-                  <Button 
-                    type="button" 
-                    variant="outline" 
-                    className="w-full h-10 border-dashed border-2 bg-transparent hover:bg-muted/50"
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    <UploadCloud className="w-4 h-4 mr-2" />
-                    Chọn tệp...
-                  </Button>
-                  <input 
-                    type="file" 
-                    accept="image/*" 
-                    className="hidden" 
-                    ref={fileInputRef}
-                    onChange={handleImageUpload}
-                  />
-                </TabsContent>
-                <TabsContent value="url" className="mt-0">
-                  <div className="relative">
-                    <LinkIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input 
-                      placeholder="https://..." 
-                      className="pl-9 h-10" 
-                      value={form.watch("imageUrl") || ""}
-                      onChange={handleUrlChange}
-                    />
-                  </div>
-                </TabsContent>
-              </Tabs>
+
+              {/* Buttons */}
+              <div className="flex flex-col gap-2 flex-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full h-10 border-dashed border-2 bg-transparent hover:bg-muted/50"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <UploadCloud className="w-4 h-4 mr-2" />
+                  Tải ảnh lên
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full h-10 bg-transparent hover:bg-muted/50"
+                  onClick={() => {
+                    setShowSearchPanel((v) => !v);
+                    setSearchError("");
+                    if (!searchQuery && form.getValues("name")) {
+                      setSearchQuery(form.getValues("name"));
+                    }
+                  }}
+                >
+                  <Search className="w-4 h-4 mr-2" />
+                  Tìm ảnh
+                </Button>
+              </div>
+
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                ref={fileInputRef}
+                onChange={handleImageUpload}
+              />
             </div>
+
+            {/* Search panel */}
+            {showSearchPanel && (
+              <div className="space-y-3 pt-1">
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Nhập tên sản phẩm để tìm ảnh..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), handleSearchImages())}
+                    className="flex-1"
+                    autoFocus
+                  />
+                  <Button
+                    type="button"
+                    onClick={handleSearchImages}
+                    disabled={isSearching}
+                    className="shrink-0"
+                  >
+                    {isSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                  </Button>
+                </div>
+
+                {searchError && (
+                  <p className="text-sm text-destructive">{searchError}</p>
+                )}
+
+                {isSearching && (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Đang tìm kiếm ảnh...
+                  </div>
+                )}
+
+                {searchResults.length > 0 && (
+                  <div className="grid grid-cols-3 gap-2">
+                    {searchResults.map((img, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => handleSelectImage(img.url)}
+                        className="relative aspect-square rounded-lg overflow-hidden border-2 border-transparent hover:border-primary transition-all group focus:outline-none focus:border-primary"
+                        title={img.title}
+                      >
+                        <img
+                          src={img.url}
+                          alt={img.title}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).parentElement!.style.display = "none";
+                          }}
+                        />
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
+          {/* Name */}
           <FormField
             control={form.control}
             name="name"
@@ -195,6 +298,7 @@ export default function ProductForm({ product, onComplete, onCancel }: ProductFo
             )}
           />
 
+          {/* Price + Quantity */}
           <div className="grid grid-cols-2 gap-4">
             <FormField
               control={form.control}
@@ -209,7 +313,7 @@ export default function ProductForm({ product, onComplete, onCancel }: ProductFo
                 </FormItem>
               )}
             />
-            
+
             <FormField
               control={form.control}
               name="quantity"
@@ -225,6 +329,7 @@ export default function ProductForm({ product, onComplete, onCancel }: ProductFo
             />
           </div>
 
+          {/* Description */}
           <FormField
             control={form.control}
             name="description"
@@ -232,10 +337,10 @@ export default function ProductForm({ product, onComplete, onCancel }: ProductFo
               <FormItem>
                 <FormLabel>Mô tả thêm</FormLabel>
                 <FormControl>
-                  <Textarea 
-                    placeholder="Ghi chú về mặt hàng..." 
+                  <Textarea
+                    placeholder="Ghi chú về mặt hàng..."
                     className="resize-none h-20"
-                    {...field} 
+                    {...field}
                   />
                 </FormControl>
                 <FormMessage />
@@ -243,7 +348,7 @@ export default function ProductForm({ product, onComplete, onCancel }: ProductFo
             )}
           />
         </div>
-        
+
         <div className="p-4 bg-muted/20 border-t flex justify-end gap-3 mt-auto">
           <Button type="button" variant="outline" onClick={onCancel} disabled={isPending}>
             Hủy

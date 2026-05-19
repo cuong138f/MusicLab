@@ -10,6 +10,7 @@ import gamificationRouter from "./gamification";
 import leaderboardRouter from "./leaderboard";
 import transcribeRouter from "./transcribe";
 import productsRouter from "./products";
+import searchImageRouter from "./search-image";
 
 const router: IRouter = Router();
 
@@ -23,6 +24,7 @@ router.use("/speaking", speakingRouter);
 router.use("/gamification", gamificationRouter);
 router.use("/leaderboard", leaderboardRouter);
 router.use(transcribeRouter);
+router.use("/products", searchImageRouter);
 router.use("/products", productsRouter);
 
 export default router;
