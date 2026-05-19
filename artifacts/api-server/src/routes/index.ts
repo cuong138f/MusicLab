@@ -33,5 +33,6 @@ router.use("/products", productsRouter);
 router.use("/sales", salesRouter);
 router.use(proxyImageRouter);
 router.use(scanProductsRouter);
+router.use(identifyProductRouter);
 
 export default router;
