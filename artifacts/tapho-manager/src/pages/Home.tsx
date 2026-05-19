@@ -66,8 +66,8 @@ export default function Home() {
           />
         )}
 
-        <div className="mb-8 max-w-md mx-auto">
-          <div className="relative group">
+        <div className="mb-8 flex items-center gap-3 max-w-xl mx-auto">
+          <div className="relative group flex-1">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
               <Search className="h-5 w-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
             </div>
@@ -79,6 +79,10 @@ export default function Home() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
+          <Button onClick={handleAddNew} className="h-12 px-5 rounded-full gap-2 shrink-0">
+            <Plus className="w-5 h-5" />
+            <span className="hidden sm:inline">Thêm mới</span>
+          </Button>
         </div>
 
         {isLoadingProducts ? (
