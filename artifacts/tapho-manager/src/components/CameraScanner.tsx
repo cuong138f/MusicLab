@@ -461,7 +461,7 @@ export default function CameraScanner({ onDetected, onClose }: CameraScannerProp
                   <div className="flex items-center justify-between pt-1.5 border-t border-dashed text-xs text-muted-foreground">
                     <div className="flex items-center gap-1.5">
                       <span className="inline-flex items-center gap-1 bg-violet-100 text-violet-700 rounded-full px-2 py-0.5 font-medium">
-                        Claude API
+                        Gemini API
                       </span>
                       <span>{apiCost.inputTokens.toLocaleString()} in · {apiCost.outputTokens.toLocaleString()} out</span>
                     </div>

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenAI } from "@google/genai";
 import multer from "multer";
 import { db } from "@workspace/db";
 
@@ -10,14 +10,14 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 },
 });
 
-// Claude claude-sonnet-4-6 pricing (USD per 1M tokens)
-const PRICE_INPUT_PER_M  = 3.00;
-const PRICE_OUTPUT_PER_M = 15.00;
+// Gemini 2.5 Flash pricing (USD per 1M tokens, ≤200K context)
+const PRICE_INPUT_PER_M  = 0.15;
+const PRICE_OUTPUT_PER_M = 0.60;
 
 router.post("/scan-products", upload.single("image"), async (req, res) => {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    res.status(500).json({ error: "ANTHROPIC_API_KEY not configured" });
+    res.status(500).json({ error: "GEMINI_API_KEY not configured" });
     return;
   }
 
@@ -67,7 +67,7 @@ Trả về JSON thuần — không markdown, không giải thích:
 
 Nếu không nhận dạng được sản phẩm nào: []`;
 
-  const client = new Anthropic({ apiKey });
+  const ai = new GoogleGenAI({ apiKey });
 
   req.log.info({ productCount: products.length, imageBytes: imageBase64.length }, "Starting product scan");
 
@@ -75,33 +75,21 @@ Nếu không nhận dạng được sản phẩm nào: []`;
   let inputTokens = 0;
   let outputTokens = 0;
   try {
-    const validMimeTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
-    type ImageMediaType = typeof validMimeTypes[number];
-    const safeMime: ImageMediaType = (validMimeTypes as readonly string[]).includes(mimeType)
-      ? (mimeType as ImageMediaType)
-      : "image/jpeg";
-
-    const message = await client.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 8192,
-      messages: [{
-        role: "user",
-        content: [
-          {
-            type: "image",
-            source: { type: "base64", media_type: safeMime, data: imageBase64 },
-          },
-          { type: "text", text: prompt },
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [{
+        parts: [
+          { inlineData: { mimeType, data: imageBase64 } },
+          { text: prompt },
         ],
       }],
+      config: { temperature: 0 },
     });
-
-    const block = message.content[0];
-    rawText = block.type === "text" ? block.text.trim() : "";
-    inputTokens  = message.usage.input_tokens;
-    outputTokens = message.usage.output_tokens;
+    rawText = response.text?.trim() ?? "";
+    inputTokens  = response.usageMetadata?.promptTokenCount     ?? 0;
+    outputTokens = response.usageMetadata?.candidatesTokenCount ?? 0;
   } catch (err) {
-    req.log.error({ err }, "Claude scan failed");
+    req.log.error({ err }, "Gemini scan failed");
     res.status(500).json({ error: "AI không thể phân tích ảnh. Vui lòng thử lại." });
     return;
   }
