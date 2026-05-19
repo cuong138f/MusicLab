@@ -25,6 +25,7 @@ export default function CameraScanner({ onDetected, onClose }: CameraScannerProp
   const [mode, setMode] = useState<"camera" | "preview" | "scanning" | "result">("camera");
   const [capturedImage, setCapturedImage] = useState<string>("");
   const [scannedItems, setScannedItems] = useState<ScannedItem[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [error, setError] = useState("");
   const [cameraError, setCameraError] = useState("");
   const [facingMode, setFacingMode] = useState<"environment" | "user">("environment");
@@ -118,6 +119,7 @@ export default function CameraScanner({ onDetected, onClose }: CameraScannerProp
         return;
       }
       setScannedItems(data.items);
+      setSelectedIds(new Set(data.items.map((i: ScannedItem) => i.productId)));
       setMode("result");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Không thể phân tích ảnh");
@@ -125,10 +127,19 @@ export default function CameraScanner({ onDetected, onClose }: CameraScannerProp
     }
   }, [capturedImage]);
 
+  const toggleItem = useCallback((id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
   const confirm = useCallback(() => {
-    onDetected(scannedItems);
+    onDetected(scannedItems.filter((i) => selectedIds.has(i.productId)));
     onClose();
-  }, [scannedItems, onDetected, onClose]);
+  }, [scannedItems, selectedIds, onDetected, onClose]);
 
   return (
     <div className="fixed inset-0 z-50 bg-black flex flex-col sm:bg-black/80 sm:items-center sm:justify-center sm:p-4">
@@ -316,7 +327,7 @@ export default function CameraScanner({ onDetected, onClose }: CameraScannerProp
               <div className="flex items-center gap-2 text-green-600">
                 <CheckCircle className="w-5 h-5" />
                 <span className="font-semibold text-sm">
-                  Nhận dạng được {scannedItems.length} sản phẩm
+                  Nhận dạng {scannedItems.length} sản phẩm — chọn để thêm vào đơn
                 </span>
               </div>
               <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
@@ -324,25 +335,58 @@ export default function CameraScanner({ onDetected, onClose }: CameraScannerProp
               </button>
             </div>
 
-            {/* Items list */}
+            {/* Items list — tap to toggle */}
             <div className="flex-1 overflow-y-auto divide-y bg-white">
-              {scannedItems.map((item) => (
-                <div key={item.productId} className="flex items-center justify-between px-4 py-3 text-sm">
-                  <span className="font-medium flex-1 pr-2 line-clamp-1">{item.productName}</span>
-                  <span className="text-muted-foreground mr-3">x{item.quantity}</span>
-                  <span className="text-primary font-semibold whitespace-nowrap">
-                    {(item.unitPrice * item.quantity).toLocaleString("vi-VN")} đ
-                  </span>
-                </div>
-              ))}
+              {scannedItems.map((item, idx) => {
+                const selected = selectedIds.has(item.productId);
+                return (
+                  <button
+                    key={item.productId}
+                    type="button"
+                    onClick={() => toggleItem(item.productId)}
+                    className={`w-full flex items-center gap-3 px-4 py-3 text-sm text-left transition-colors active:bg-muted/60 ${
+                      selected ? "bg-white" : "bg-muted/30"
+                    }`}
+                  >
+                    {/* Number badge */}
+                    <div className={`w-8 h-8 rounded-full shrink-0 flex items-center justify-center font-bold text-sm transition-colors ${
+                      selected
+                        ? "bg-primary text-white"
+                        : "bg-muted text-muted-foreground line-through"
+                    }`}>
+                      {idx + 1}
+                    </div>
+
+                    {/* Name */}
+                    <span className={`flex-1 font-medium line-clamp-1 transition-colors ${
+                      selected ? "text-foreground" : "text-muted-foreground line-through"
+                    }`}>
+                      {item.productName}
+                    </span>
+
+                    {/* Qty + price */}
+                    <div className={`text-right shrink-0 transition-colors ${selected ? "" : "opacity-40"}`}>
+                      <div className="text-muted-foreground text-xs">x{item.quantity}</div>
+                      <div className="text-primary font-semibold whitespace-nowrap">
+                        {(item.unitPrice * item.quantity).toLocaleString("vi-VN")} đ
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
 
             {/* Total + actions */}
             <div className="bg-white border-t px-4 py-4 space-y-3">
               <div className="flex items-center justify-between text-sm font-semibold px-1">
-                <span>Tổng cộng</span>
+                <span>
+                  Đã chọn {selectedIds.size}/{scannedItems.length}
+                </span>
                 <span className="text-primary text-base">
-                  {scannedItems.reduce((s, i) => s + i.unitPrice * i.quantity, 0).toLocaleString("vi-VN")} đ
+                  {scannedItems
+                    .filter((i) => selectedIds.has(i.productId))
+                    .reduce((s, i) => s + i.unitPrice * i.quantity, 0)
+                    .toLocaleString("vi-VN")} đ
                 </span>
               </div>
               <div className="flex gap-3">
@@ -358,10 +402,11 @@ export default function CameraScanner({ onDetected, onClose }: CameraScannerProp
                 <Button
                   type="button"
                   onClick={confirm}
+                  disabled={selectedIds.size === 0}
                   className="flex-1 gap-2 rounded-full h-12"
                 >
                   <CheckCircle className="w-4 h-4" />
-                  Thêm vào đơn
+                  Thêm {selectedIds.size > 0 ? `(${selectedIds.size})` : ""}
                 </Button>
               </div>
             </div>
