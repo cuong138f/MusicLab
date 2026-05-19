@@ -116,7 +116,7 @@ export default function Home() {
       </main>
 
       <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
-        <DialogContent className="w-[95vw] max-w-[500px] p-0 overflow-hidden bg-background max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-[calc(100vw-2rem)] max-w-[500px] p-0 bg-background overflow-hidden">
           <DialogHeader className="p-6 pb-2">
             <DialogTitle className="font-serif text-xl">
               {editingProduct ? "Sửa thông tin sản phẩm" : "Thêm sản phẩm mới"}
